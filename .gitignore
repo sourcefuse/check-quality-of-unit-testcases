@@ -1,0 +1,17 @@
+.DS_Store
+node_modules/
+OpenRouterAICore*
+reports/
+documents/
+coverage/
+dist/
+package-lock.json
+.env
+output*
+run.sh
+createtag.sh
+tmp/
+prompt.txt
+.env.*
+test*
+.git_bak
