@@ -256,11 +256,7 @@ async function fetchConfluenceDocumentation(jiraId: string): Promise<string> {
         const projectDoc = await GetProjectDocument();
         
         // Additionally search for related Confluence pages
-        const searchTool = ConfluenceSearchTool(
-            GlobalENV.JIRA_URL,
-            GlobalENV.JIRA_EMAIL,
-            GlobalENV.JIRA_API_TOKEN
-        );
+        const searchTool = ConfluenceSearchTool();
         
         // Search for documentation related to the JIRA ticket
         const searchQuery = `${jiraId} OR "${jiraId.split('-')[0]}" type:page`;
