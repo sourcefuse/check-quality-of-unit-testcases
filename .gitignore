@@ -13,5 +13,5 @@ createtag.sh
 tmp/
 prompt.txt
 .env.*
-test*
+
 .git_bak

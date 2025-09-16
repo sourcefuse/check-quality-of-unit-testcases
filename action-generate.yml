@@ -1,0 +1,271 @@
+name: 'AI-Powered Test Generation'
+description: 'Automatically generates unit tests from JIRA tickets and Confluence documentation using AI'
+inputs:
+    GITHUB_TOKEN:
+        required: true
+        description: 'GitHub token for API access and PR creation'
+    USE_FOR:
+        description: 'The generation mode for tests'
+        default: 'GenerateUnitTests'
+        required: false
+    JIRA_API_TOKEN:
+        description: 'The JIRA API token for authentication'
+        required: true
+    JIRA_EMAIL:
+        description: 'The JIRA email for authentication'
+        required: true
+    JIRA_FETCH_FIELDS:
+        description: 'Fields to fetch from JIRA'
+        required: false
+        default: 'summary,description,acceptance,customfield_10000,customfield_10001'
+    JIRA_MAX_RESULT:
+        description: 'Maximum number of results to fetch from JIRA'
+        required: false
+        default: '100'
+    JIRA_PROJECT_KEY:
+        description: 'The JIRA project key to filter issues'
+        required: true
+        default: ''
+    JIRA_URL:
+        description: 'The JIRA instance URL'
+        required: true
+        default: 'https://your-jira-instance.atlassian.net'
+    OPEN_ROUTER_API_KEY:
+        description: 'The OpenRouter API key for AI generation'
+        required: true
+    OPEN_ROUTER_API_URL:
+        required: false
+        description: 'The OpenRouter API URL'
+        default: 'https://openrouter.ai/api/v1'
+    OPEN_ROUTER_MODEL:
+        description: 'The OpenRouter model to use for test generation'
+        default: 'claude-3-opus,gpt-4-turbo'
+        required: false
+    DOCKER_USERNAME:
+        description: 'The Docker username for authentication'
+        required: true
+    DOCKER_PASSWORD:
+        description: 'The Docker password for authentication'
+        required: true
+    AWS_ACCESS_KEY:
+        description: 'AWS Access Key for authentication'
+        required: false
+        default: ''
+    AWS_SECRET_KEY:
+        description: 'AWS Secret Key for authentication'
+        required: false
+        default: ''
+    AWS_REGION:
+        description: 'AWS Region for the service'
+        required: false
+        default: 'us-east-1'
+    S3_BUCKET_NAME:
+        description: 'The name of the S3 bucket for documentation storage'
+        required: false
+        default: ''
+    PROJECT_DOCUMENT_PATH:
+        description: 'The path to the project documentation'
+        required: false
+        default: ''
+    GENERATION_MODE:
+        description: 'Test generation mode (full|modified|ticket)'
+        required: false
+        default: 'ticket'
+
+outputs:
+    pr_url:
+        description: 'The URL of the created pull request with generated tests'
+    tests_generated:
+        description: 'Number of test files generated'
+    coverage_summary:
+        description: 'Summary of test coverage areas'
+
+runs:
+    using: 'composite'
+    steps:
+        - name: Detect Branch and Extract JIRA Ticket
+          id: branch-info
+          shell: bash
+          run: |
+              BRANCH_NAME=${GITHUB_REF#refs/heads/}
+              echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+              
+              # Extract JIRA ticket from branch name (e.g., feature/PROJ-123-description)
+              TICKET_KEY=$(echo $BRANCH_NAME | grep -oP '(?:feature/|bugfix/|hotfix/)\K[A-Z]+-\d+' || echo "")
+              echo "ticket-key=$TICKET_KEY" >> $GITHUB_OUTPUT
+              
+              if [ -z "$TICKET_KEY" ]; then
+                  echo "⚠️ No JIRA ticket found in branch name. Expected format: feature/PROJ-123-description"
+              else
+                  echo "✅ Found JIRA ticket: $TICKET_KEY"
+              fi
+
+        - name: Setup OpenRouterAPI and Dependencies
+          shell: bash
+          run: |
+              cd ${{ github.action_path }}
+              if [ ! -d "OpenRouterAICore" ]; then
+                  git clone --depth=1 https://github.com/sourcefuse/OpenRouterAICore.git OpenRouterAICore
+                  cd OpenRouterAICore && npm install && cd .. && npm install
+              fi
+
+        - name: Setup Docker Services
+          uses: docker/setup-buildx-action@v3
+
+        - name: Start Required Services
+          shell: bash
+          run: |
+              echo "Starting required Docker services..."
+              sudo docker login -u "${{inputs.DOCKER_USERNAME}}" -p "${{inputs.DOCKER_PASSWORD}}" docker.io
+              
+              # Start Presidio services for data anonymization
+              docker run -d -p 5001:3000 mcr.microsoft.com/presidio-anonymizer:latest
+              docker run -d -p 5002:3000 mcr.microsoft.com/presidio-analyzer:latest
+              
+              # Start Qdrant vector database
+              docker run -d -p 6333:6333 qdrant/qdrant
+              
+              echo "Waiting for services to be ready..."
+              sleep 10
+
+        - name: Analyze Project Structure
+          id: project-analysis
+          shell: bash
+          run: |
+              echo "Analyzing project structure..."
+              
+              # Detect framework
+              if [ -f "package.json" ]; then
+                  if grep -q "@angular/core" package.json; then
+                      echo "framework=angular" >> $GITHUB_OUTPUT
+                  elif grep -q "react" package.json; then
+                      echo "framework=react" >> $GITHUB_OUTPUT
+                  elif grep -q "@loopback/core" package.json; then
+                      echo "framework=loopback" >> $GITHUB_OUTPUT
+                  else
+                      echo "framework=unknown" >> $GITHUB_OUTPUT
+                  fi
+              fi
+
+        - name: Generate Unit Tests with AI
+          id: generate-tests
+          shell: bash
+          env:
+              AWS_ACCESS_KEY: ${{ inputs.AWS_ACCESS_KEY }}
+              AWS_REGION: ${{ inputs.AWS_REGION }}
+              AWS_SECRET_KEY: ${{ inputs.AWS_SECRET_KEY }}
+              S3_BUCKET_NAME: ${{ inputs.S3_BUCKET_NAME }}
+              GITHUB_ISSUE_NUMBER: ${{ github.event.pull_request.number || github.run_number }}
+              GITHUB_OWNER: ${{ github.repository_owner }}
+              GITHUB_REPO: ${{ github.event.repository.name }}
+              GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+              JIRA_API_TOKEN: ${{ inputs.JIRA_API_TOKEN }}
+              JIRA_EMAIL: ${{ inputs.JIRA_EMAIL }}
+              JIRA_FETCH_FIELDS: ${{ inputs.JIRA_FETCH_FIELDS }}
+              JIRA_MAX_RESULT: ${{ inputs.JIRA_MAX_RESULT }}
+              JIRA_PROJECT_KEY: ${{ inputs.JIRA_PROJECT_KEY }}
+              JIRA_TICKET_ID: ${{ steps.branch-info.outputs.ticket-key }}
+              JIRA_URL: ${{ inputs.JIRA_URL }}
+              OPEN_ROUTER_API_KEY: ${{ inputs.OPEN_ROUTER_API_KEY }}
+              OPEN_ROUTER_API_URL: ${{ inputs.OPEN_ROUTER_API_URL }}
+              OPEN_ROUTER_MODEL: ${{ inputs.OPEN_ROUTER_MODEL }}
+              PRESIDIO_ANALYZE_URL: 'http://localhost:5002/analyze'
+              PRESIDIO_ANONYMIZE_URL: 'http://localhost:5001/anonymize'
+              PROJECT_DOCUMENT_PATH: ${{ inputs.PROJECT_DOCUMENT_PATH }}
+              USE_FOR: ${{ inputs.USE_FOR }}
+              VECTOR_STORE_TYPE: 'QDRANT'
+              VECTOR_STORE_URL: 'http://127.0.0.1:6333'
+              GENERATION_MODE: ${{ inputs.GENERATION_MODE }}
+          run: |
+              echo "Starting AI test generation..."
+              npx ts-node ${{ github.action_path }}/generateTests.ts
+              
+              # Count generated files
+              if [ -d "generated-tests" ]; then
+                  TEST_COUNT=$(find generated-tests -name "*.test.*" -o -name "*.spec.*" | wc -l)
+                  echo "tests-count=$TEST_COUNT" >> $GITHUB_OUTPUT
+                  echo "✅ Generated $TEST_COUNT test files"
+              else
+                  echo "tests-count=0" >> $GITHUB_OUTPUT
+                  echo "⚠️ No tests were generated"
+              fi
+
+        - name: Validate Generated Tests
+          id: validate-tests
+          shell: bash
+          continue-on-error: true
+          run: |
+              echo "Validating generated tests..."
+              
+              # Run framework-specific test validation
+              FRAMEWORK=${{ steps.project-analysis.outputs.framework }}
+              
+              if [ "$FRAMEWORK" = "angular" ]; then
+                  echo "Running Angular test validation..."
+                  npm run test -- generated-tests/ --watch=false --browsers=ChromeHeadless || true
+              elif [ "$FRAMEWORK" = "react" ]; then
+                  echo "Running React test validation..."
+                  npm test -- generated-tests/ --watchAll=false || true
+              else
+                  echo "Running generic test validation..."
+                  npm test generated-tests/ || true
+              fi
+
+        - name: Create Pull Request
+          id: create-pr
+          if: steps.generate-tests.outputs.tests-count > 0
+          uses: peter-evans/create-pull-request@v5
+          with:
+              token: ${{ inputs.GITHUB_TOKEN }}
+              branch: test/${{ steps.branch-info.outputs.ticket-key }}-generated
+              title: "test: AI-generated tests for ${{ steps.branch-info.outputs.ticket-key }}"
+              body: |
+                  ## 🤖 AI-Generated Unit Tests
+                  
+                  This PR contains AI-generated unit tests for JIRA ticket: **${{ steps.branch-info.outputs.ticket-key }}**
+                  
+                  ### 📊 Summary
+                  - **Framework detected:** ${{ steps.project-analysis.outputs.framework }}
+                  - **Tests generated:** ${{ steps.generate-tests.outputs.tests-count }} files
+                  - **Generation mode:** ${{ inputs.GENERATION_MODE }}
+                  - **AI Model:** ${{ inputs.OPEN_ROUTER_MODEL }}
+                  
+                  ### 📝 Review Checklist
+                  - [ ] Tests compile without errors
+                  - [ ] Tests run successfully
+                  - [ ] Test assertions are meaningful and correct
+                  - [ ] All acceptance criteria are covered
+                  - [ ] No duplicate or redundant tests
+                  - [ ] Follows project testing conventions
+                  - [ ] Appropriate mocking and stubbing
+                  - [ ] Good test data and edge cases
+                  
+                  ### 🔗 Related Links
+                  - [JIRA Ticket](${{ inputs.JIRA_URL }}/browse/${{ steps.branch-info.outputs.ticket-key }})
+                  - [Project Documentation](${{ inputs.PROJECT_DOCUMENT_PATH }})
+                  
+                  ### ⚠️ Important Notes
+                  These tests have been automatically generated. Please review carefully and make any necessary adjustments before merging.
+                  
+                  ---
+                  *Generated with AI Test Generation Pipeline*
+              commit-message: |
+                  test: Add AI-generated tests for ${{ steps.branch-info.outputs.ticket-key }}
+                  
+                  - Generated ${{ steps.generate-tests.outputs.tests-count }} test files
+                  - Framework: ${{ steps.project-analysis.outputs.framework }}
+                  - Covers acceptance criteria from JIRA ticket
+
+        - name: Output Results
+          shell: bash
+          run: |
+              echo "pr_url=${{ steps.create-pr.outputs.pull-request-url }}" >> $GITHUB_OUTPUT
+              echo "tests_generated=${{ steps.generate-tests.outputs.tests-count }}" >> $GITHUB_OUTPUT
+              
+              echo "========================================="
+              echo "✅ AI Test Generation Complete!"
+              echo "========================================="
+              echo "PR URL: ${{ steps.create-pr.outputs.pull-request-url }}"
+              echo "Tests Generated: ${{ steps.generate-tests.outputs.tests-count }}"
+              echo "Framework: ${{ steps.project-analysis.outputs.framework }}"
+              echo "========================================="

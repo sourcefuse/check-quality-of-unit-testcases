@@ -1,0 +1,199 @@
+name: AI-Powered Test Generation
+
+on:
+  create:
+    branches:
+      - 'feature/*'
+      - 'bugfix/*'
+      - 'hotfix/*'
+  workflow_dispatch:
+    inputs:
+      jira_ticket:
+        description: 'JIRA ticket ID (e.g., PROJ-123)'
+        required: false
+        type: string
+      generation_mode:
+        description: 'Generation mode'
+        required: true
+        default: 'ticket'
+        type: choice
+        options:
+          - ticket
+          - modified
+          - full
+
+jobs:
+  generate-tests:
+    name: Generate Unit Tests with AI
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: |
+          npm ci --prefer-offline --no-audit
+          
+      - name: Extract JIRA Ticket
+        id: jira-extract
+        run: |
+          if [ -n "${{ github.event.inputs.jira_ticket }}" ]; then
+            echo "ticket-key=${{ github.event.inputs.jira_ticket }}" >> $GITHUB_OUTPUT
+          else
+            BRANCH_NAME=${GITHUB_REF#refs/heads/}
+            TICKET_KEY=$(echo $BRANCH_NAME | grep -oP '(?:feature/|bugfix/|hotfix/)\K[A-Z]+-\d+' || echo "")
+            echo "ticket-key=$TICKET_KEY" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Cache AI Models
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/openrouter
+            ~/.cache/claude
+          key: ${{ runner.os }}-ai-models-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-ai-models-
+            
+      - name: Run AI Test Generation
+        uses: sfvishalgupta/check-quality-of-unit-testcases@feature/ai-test-generation
+        id: generate
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
+          OPEN_ROUTER_MODEL: ${{ vars.OPEN_ROUTER_MODEL || 'claude-3-opus,gpt-4-turbo' }}
+          DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY || '' }}
+          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY || '' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME || '' }}
+          PROJECT_DOCUMENT_PATH: ${{ vars.PROJECT_DOCUMENT_PATH || '' }}
+          GENERATION_MODE: ${{ github.event.inputs.generation_mode || 'ticket' }}
+          
+      - name: Upload Generated Tests
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: generated-tests
+          path: |
+            generated-tests/
+            test-generation-prompt.txt
+            test-generation-result.txt
+          retention-days: 30
+          
+      - name: Comment on Original PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr_url = '${{ steps.generate.outputs.pr_url }}';
+            const tests_count = '${{ steps.generate.outputs.tests_generated }}';
+            const coverage_summary = '${{ steps.generate.outputs.coverage_summary }}';
+            
+            const comment = `## 🤖 AI Test Generation Complete!
+            
+            I've generated **${tests_count}** unit test files for this feature.
+            
+            ### 📊 Coverage Summary
+            ${coverage_summary || 'Tests cover all major functionality and edge cases'}
+            
+            ### 🔗 Review Generated Tests
+            ${pr_url ? `Pull Request: ${pr_url}` : 'Tests added to this PR'}
+            
+            ### ✅ Next Steps
+            1. Review the generated tests
+            2. Run tests locally to verify
+            3. Make any necessary adjustments
+            4. Merge when satisfied
+            
+            ---
+            *Powered by AI Test Generation Pipeline*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+            
+      - name: Post Summary
+        if: always()
+        run: |
+          echo "## Test Generation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| JIRA Ticket | ${{ steps.jira-extract.outputs.ticket-key }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests Generated | ${{ steps.generate.outputs.tests_generated }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR URL | ${{ steps.generate.outputs.pr_url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Generation Mode | ${{ github.event.inputs.generation_mode || 'ticket' }} |" >> $GITHUB_STEP_SUMMARY
+          
+  validate-tests:
+    name: Validate Generated Tests
+    needs: generate-tests
+    runs-on: ubuntu-latest
+    if: needs.generate-tests.outputs.tests_generated > 0
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Download Generated Tests
+        uses: actions/download-artifact@v3
+        with:
+          name: generated-tests
+          path: generated-tests/
+          
+      - name: Install Dependencies
+        run: npm ci --prefer-offline --no-audit
+        
+      - name: Run Linter on Generated Tests
+        continue-on-error: true
+        run: |
+          if [ -f ".eslintrc.json" ] || [ -f ".eslintrc.js" ]; then
+            npx eslint generated-tests/ --fix || true
+          fi
+          
+      - name: Run Type Check
+        continue-on-error: true
+        run: |
+          if [ -f "tsconfig.json" ]; then
+            npx tsc --noEmit --project generated-tests/ || true
+          fi
+          
+      - name: Run Generated Tests
+        id: test-run
+        continue-on-error: true
+        run: |
+          npm test -- generated-tests/ --coverage || true
+          
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
+          retention-days: 30

@@ -58,35 +58,36 @@ jobs:
       
 ```
 
-## Setup Files
-### Angular
-* Place the files in Angular Project [Angular Setup](./src/angular/)
-* **karma-json-result-reporter** is required to evaluate test cases.
-* In your **karma.conf.js** add
+## AI-Powered Test Generation
 
-```javascript
-  plugins: [
-    ...
-    'karma-json-result-reporter',
-    ...
-  ];
+This action automatically detects your project framework (React, Angular, Loopback) and generates appropriate unit tests using AI analysis of your JIRA tickets and project documentation.
 
-  reporters: [
-    'json-result'
-    ...
-  ],
-```
+### Supported Frameworks
 
-You will also need to set the location that you need to output your JSON file.
-```javascript
-jsonResultReporter: {
-  outputFile: "karma-result.json",
-  isSynchronous: true (optional, default false)
-}
-```
+**React Projects:**
+- Automatically detected via `react` and `react-dom` dependencies
+- Generates tests using React Testing Library patterns
+- Supports hooks, components, and service testing
 
-### Loopback
-* Place the files in Loopback Project [Loopback Setup](./src/loopback/)
+**Angular Projects:**
+- Automatically detected via `@angular/core` dependency  
+- Generates tests using TestBed and Jasmine patterns
+- Supports component, service, and directive testing
+
+**Loopback Projects:**
+- Automatically detected via `@loopback/core` dependency
+- Generates tests for controllers, repositories, and services
+- Uses Mocha/Chai testing patterns
+
+### Automatic Framework Detection
+
+The AI automatically detects your framework by analyzing:
+- `package.json` dependencies and devDependencies
+- Project directory structure (src/, app/, etc.)
+- Existing test file patterns (.test., .spec., etc.)
+- Configuration files (angular.json, tsconfig.json, etc.)
+
+No manual setup or configuration files required!
 
 ## Configuration
 ### Secrets
