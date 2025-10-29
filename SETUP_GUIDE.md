@@ -10,7 +10,8 @@
 - [Notifications](#notifications)
 - [Troubleshooting](#troubleshooting)
 - [Best Practices](#best-practices)
-- [Version History](#version-history)
+- [Usage in GitHub Actions](#usage-in-github-actions)
+- [Next Steps](#next-steps)
 
 ## Overview
 
@@ -556,39 +557,12 @@ If issues persist:
 - ✅ Use descriptive names: `TEL-123-add-user-authentication`
 - ❌ Avoid prefixes before JIRA key: `feature/TEL-123`
 
-## Version History
-
-### V1.2.0 (Latest)
-- ✨ Added branch name validation with JIRA_PROJECT_KEY
-- ✨ Case-insensitive branch name checking
-- ✨ Added "reopened" trigger for pull requests
-- ✨ Built-in failure notifications via PR comments
-- 📚 Comprehensive notification setup guide
-- 🔧 Improved workflow organization
-
-### V1.1.0
-- 📚 Comprehensive SETUP_GUIDE.md documentation
-- 🎯 Framework-specific setup for Angular and LoopBack
-- 💬 Enhanced error messages
-
-### V1.0.0
-- 🚀 Initial release
-- 🤖 AI-powered test quality analysis
-- 🔗 Jira/Confluence integration
-
 ## Usage in GitHub Actions
 
-### Latest Version (Recommended)
+### Using the Action
 
 ```yaml
 - uses: sourcefuse/check-quality-of-unit-testcases@V1.2.0
-```
-
-### Specific Versions
-
-```yaml
-- uses: sourcefuse/check-quality-of-unit-testcases@V1.1.0
-- uses: sourcefuse/check-quality-of-unit-testcases@V1.0.0
 ```
 
 ### Complete Workflow Example
@@ -649,20 +623,3 @@ After successful setup:
 5. ✅ Configure additional notifications (Slack, Email, Teams)
 6. ✅ Set up quality thresholds for your team
 7. ✅ Integrate with other CI/CD tools
-
-## Additional Resources
-
-- 📖 [Notification Setup Guide](./NOTIFICATION_SETUP.md) - Configure Slack, Email, Teams notifications
-- 🔗 [OpenRouter AI Models](https://openrouter.ai/models) - Available AI models
-- 🔗 [Jira API Tokens](https://id.atlassian.com/manage/api-tokens) - Generate API tokens
-- 🔗 [GitHub Actions Documentation](https://docs.github.com/en/actions) - GitHub Actions reference
-
-## License
-
-MIT © 2025 Vishal Gupta
-
-## Support
-
-- 📧 Email: vishal.gupta@sourcefuse.com
-- 🐛 Issues: https://github.com/sourcefuse/check-quality-of-unit-testcases/issues
-- 📚 Documentation: https://github.com/sourcefuse/check-quality-of-unit-testcases

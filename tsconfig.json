@@ -1,10 +1,51 @@
 {
   "compilerOptions": {
-    "target": "es6",
+    /* Language and Environment */
+    "target": "ES2020",
+    "lib": ["ES2020"],
+
+    /* Modules */
     "module": "commonjs",
-    "outDir": "./dist",
     "rootDir": "./",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+
+    /* Emit */
+    "outDir": "./dist",
+    "sourceMap": true,
+    "removeComments": false,
+    "declaration": true,
+    "declarationMap": true,
+
+    /* Interop Constraints */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Type Checking */
     "strict": true,
-    "esModuleInterop": true
-  }
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+
+    /* Completeness */
+    "skipLibCheck": true
+  },
+  "include": [
+    "*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "OpenRouterAICore"
+  ]
 }

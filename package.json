@@ -19,7 +19,7 @@
     "dotenv": "^16.5.0",
     "libsodium-wrappers": "^0.7.15",
     "octokit": "^5.0.3",
-    "OpenRouterAICore": "file:./OpenRouterAICore",
+    "OpenRouterAICore": "file:OpenRouterAICore",
     "ts-node": "^10.9.2",
     "turndown": "^7.2.0",
     "tweetsodium": "^0.0.4"
