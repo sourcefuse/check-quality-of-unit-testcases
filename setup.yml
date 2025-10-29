@@ -1,0 +1,58 @@
+name: "Test Generate UT Automation from JIRA Story"
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 23
+        uses: actions/setup-node@v4
+        with:
+          node-version: 23
+
+      - name: Build
+        run: |
+          bash setup.sh
+
+      - name: Run OpenRouterAI Test Quality Checker
+        id: run-check-quality-of-unit-testcases-openrouterai
+        uses: sourcefuse/check-quality-of-unit-testcases@V1.0.0
+        with:
+          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_UT || '' }}
+          AWS_REGION: ${{ vars.AWS_REGION_UT || '' }}
+          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY_UT || '' }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD || '' }}
+          DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME || '' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
+          OPEN_ROUTER_MODEL: ${{ vars.OPEN_ROUTER_MODEL }}
+          PROJECT_DOCUMENT_PATH: ${{ vars.PROJECT_DOCUMENT_PATH || '' }}
+          S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME_UT || '' }}
+          USE_FOR: ${{ vars.USE_FOR || '' }}
+          JIRA_URL_OUTPUT: ${{vars.JIRA_URL_OUTPUT}}
+          JIRA_EMAIL_OUTPUT: ${{vars.JIRA_EMAIL_OUTPUT}}
+          JIRA_API_TOKEN_OUTPUT: ${{secrets.JIRA_API_TOKEN_OUTPUT}}
+          JIRA_SPACE_KEY_OUTPUT: ${{vars.JIRA_SPACE_KEY_OUTPUT}}

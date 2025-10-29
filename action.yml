@@ -93,6 +93,36 @@ permissions:
 runs:
     using: 'composite' # or 'node20' if you prefer
     steps:
+        - name: Validate branch name
+          id: validate-branch
+          shell: bash
+          run: |
+              BRANCH_NAME="${{ github.head_ref }}"
+              JIRA_KEY="${{ inputs.JIRA_PROJECT_KEY }}"
+
+              if [[ -z "$BRANCH_NAME" ]]; then
+                  echo "⚠️  Warning: Unable to determine branch name. Skipping validation."
+                  exit 0
+              fi
+
+              if [[ -z "$JIRA_KEY" ]]; then
+                  echo "⚠️  Warning: JIRA_PROJECT_KEY not set. Skipping branch validation."
+                  exit 0
+              fi
+
+              # Convert to lowercase for case-insensitive comparison
+              BRANCH_NAME_LOWER=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]')
+              JIRA_KEY_LOWER=$(echo "$JIRA_KEY" | tr '[:upper:]' '[:lower:]')
+
+              if [[ ! "$BRANCH_NAME_LOWER" =~ ^$JIRA_KEY_LOWER ]]; then
+                  echo "❌ Error: Branch name must start with '$JIRA_KEY' (case-insensitive)"
+                  echo "Current branch: $BRANCH_NAME"
+                  echo "Expected format: $JIRA_KEY-XXX-description"
+                  exit 1
+              fi
+
+              echo "✅ Branch name validation passed: $BRANCH_NAME"
+
         - name: Create timestamp and export to env
           id: timestamp
           shell: bash

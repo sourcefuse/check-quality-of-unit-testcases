@@ -1,13 +1,14 @@
 {
   "name": "check-quality-of-unit-testcases",
   "description": "This action checks the quality of unit test cases in a repository via ai.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.ts",
   "scripts": {
     "build": "tsc && ncc build",
     "format": "prettier --write '**/*.ts'",
     "format-check": "prettier --check '**/*.ts'",
-    "test": ""
+    "test": "",
+    "start": "npx ts-node main.ts"
   },
   "keywords": [
     "actions"
