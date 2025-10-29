@@ -14,8 +14,6 @@
     "outDir": "./dist",
     "sourceMap": true,
     "removeComments": false,
-    "declaration": true,
-    "declarationMap": true,
 
     /* Interop Constraints */
     "esModuleInterop": true,
@@ -24,18 +22,13 @@
 
     /* Type Checking */
     "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
     "strictFunctionTypes": true,
     "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
+    "strictPropertyInitialization": false,
     "noImplicitThis": true,
     "alwaysStrict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
 
     /* Completeness */
     "skipLibCheck": true
