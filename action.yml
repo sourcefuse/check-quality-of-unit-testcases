@@ -108,20 +108,20 @@ runs:
                   cd OpenRouterAICore && npm install --legacy-peer-deps && cd .. && npm install --legacy-peer-deps
               fi
 
-        # - name: Set up Docker Buildx
-        #   uses: docker/setup-buildx-action@v3
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v3
 
-        # - name: docker login
-        #   shell: bash
-        #   run: |
-        #       echo "Port 6333 is not open"
-        #       sudo docker login -u "${{inputs.DOCKER_USERNAME}}" -p "${{inputs.DOCKER_PASSWORD}}" docker.io
-        #       docker pull mcr.microsoft.com/presidio-analyzer:latest
-        #       docker pull mcr.microsoft.com/presidio-anonymizer:latest
+        - name: docker login
+          shell: bash
+          run: |
+              echo "Port 6333 is not open"
+              sudo docker login -u "${{inputs.DOCKER_USERNAME}}" -p "${{inputs.DOCKER_PASSWORD}}" docker.io
+              docker pull mcr.microsoft.com/presidio-analyzer:latest
+              docker pull mcr.microsoft.com/presidio-anonymizer:latest
 
-        #       docker run -d -p 5001:3000 mcr.microsoft.com/presidio-anonymizer:latest
-        #       docker run -d -p 5002:3000 mcr.microsoft.com/presidio-analyzer:latest
-        #       docker run -d -p 6333:6333 qdrant/qdrant
+              docker run -d -p 5001:3000 mcr.microsoft.com/presidio-anonymizer:latest
+              docker run -d -p 5002:3000 mcr.microsoft.com/presidio-analyzer:latest
+              docker run -d -p 6333:6333 qdrant/qdrant
 
         - name: Run Node.js logic
           id: run-get-ut-test-cases-open-router-ai
