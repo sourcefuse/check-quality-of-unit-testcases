@@ -279,6 +279,13 @@ async function main(): Promise<string> {
         logger.info(`Step 6: Getting Response from OpenRouter API`);
         logger.info(`API URL: ${GlobalENV.OPEN_ROUTER_API_URL}`);
         logger.info(`Models: ${GlobalENV.OPEN_ROUTER_MODEL}`);
+
+        // Log API key verification (last 10 characters for security)
+        const apiKey = GlobalENV.OPEN_ROUTER_API_KEY || '';
+        const maskedKey = apiKey.length > 10 ? '...' + apiKey.slice(-10) : 'NOT_SET';
+        console.log(`🔑 OpenRouter API Key (last 10 chars): ${maskedKey}`);
+        logger.info(`OpenRouter API Key verification: ${maskedKey}`);
+
         const modelNames = GlobalENV.OPEN_ROUTER_MODEL.split(',');
 
         const modelResults = await processModelResponses(modelNames, store, userPrompt, summaryResponse);
