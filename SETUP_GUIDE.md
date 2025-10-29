@@ -3,12 +3,14 @@
 ## Table of Contents
 - [Overview](#overview)
 - [Prerequisites](#prerequisites)
-- [Installation](#installation)
+- [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Project-Specific Setup](#project-specific-setup)
-- [Running Locally](#running-locally)
-- [GitHub Actions Integration](#github-actions-integration)
+- [Testing Locally](#testing-locally)
+- [Notifications](#notifications)
 - [Troubleshooting](#troubleshooting)
+- [Best Practices](#best-practices)
+- [Version History](#version-history)
 
 ## Overview
 
@@ -18,6 +20,15 @@ This GitHub Action analyzes unit test quality using AI-powered assessment. It in
 - **GitHub Actions** for CI/CD automation
 - **Presidio** for data anonymization
 - **Qdrant** for vector storage
+- **Branch Name Validation** for enforcing JIRA naming conventions
+
+### Key Features
+- ✅ Automated test quality analysis
+- ✅ Branch name validation (case-insensitive)
+- ✅ Automatic PR comments on failure
+- ✅ Support for Angular and LoopBack projects
+- ✅ Confluence integration for reports
+- ✅ Multi-notification support (Slack, Email, Teams)
 
 ## Prerequisites
 
@@ -25,144 +36,87 @@ This GitHub Action analyzes unit test quality using AI-powered assessment. It in
 - **Node.js**: Version 18 or higher
 - **npm**: Version 9 or higher
 - **Git**: Latest version
-- **Docker**: For local testing with Presidio and Qdrant
+- **Docker**: For local testing (optional)
 
 ### Required Accounts & Access
 1. **GitHub Account** with repository access
-2. **OpenRouter AI Account** with API key
+2. **OpenRouter AI Account** with API key (https://openrouter.ai)
 3. **Jira/Confluence Access** with API tokens
-4. **AWS Account** (optional, for S3 storage)
-5. **Docker Hub Account** (for pulling required images)
+4. **Docker Hub Account** for pulling required images
+5. **AWS Account** (optional, for S3 storage)
 
-## Installation
+## Quick Start
 
-### Step 1: Clone the Repository
+### Step 1: Copy Workflow File
 
-```bash
-git clone https://github.com/sfvishalgupta/check-quality-of-unit-testcases.git
-cd check-quality-of-unit-testcases
-```
-
-### Step 2: Install Dependencies
-
-Run the setup script which will:
-- Clone the OpenRouterAICore library
-- Install all npm dependencies
-- Set up the project structure
+Download the pre-configured workflow file to your project:
 
 ```bash
-bash setup.sh
+# Create workflows directory if it doesn't exist
+mkdir -p .github/workflows
+
+# Download the workflow file
+curl -o .github/workflows/test-quality-check.yml \
+  https://raw.githubusercontent.com/sourcefuse/check-quality-of-unit-testcases/main/setup.yml
 ```
 
-Or manually:
-
+Or manually copy:
 ```bash
-# Clone OpenRouterAICore
-git clone --branch=main --depth=1 https://github.com/sourcefuse/OpenRouterAICore.git ./OpenRouterAICore
-rm -rf OpenRouterAICore/.git
-
-# Install dependencies
-cd OpenRouterAICore && npm install --legacy-peer-deps
-cd .. && npm install
+cp /path/to/check-quality-of-unit-testcases/setup.yml .github/workflows/test-quality-check.yml
 ```
 
-## Configuration
+### Step 2: Configure GitHub Secrets
 
-### Step 1: Create Environment File
+Go to your repository → **Settings** → **Secrets and Variables** → **Actions**
 
-Create a `.env` file in the project root with the following variables:
+**Add the following Secrets:**
 
-```bash
-# GitHub Configuration
-GITHUB_TOKEN=your_github_token
-GITHUB_OWNER=your_github_username
-GITHUB_REPO=your_repo_name
-GITHUB_ISSUE_NUMBER=1
+| Secret Name | Description | Required |
+|------------|-------------|----------|
+| `OPEN_ROUTER_API_KEY` | Your OpenRouter AI API key | ✅ Yes |
+| `JIRA_API_TOKEN` | Jira API token for input | ✅ Yes |
+| `JIRA_API_TOKEN_OUTPUT` | Jira API token for output | ✅ Yes |
+| `DOCKER_PASSWORD` | Docker Hub password | ✅ Yes |
+| `AWS_ACCESS_KEY_UT` | AWS access key (if using S3) | ⚠️ Optional |
+| `AWS_SECRET_KEY_UT` | AWS secret key (if using S3) | ⚠️ Optional |
 
-# OpenRouter AI Configuration
-OPEN_ROUTER_API_KEY=your_openrouter_api_key
-OPEN_ROUTER_API_URL=https://openrouter.ai/api/v1
-OPEN_ROUTER_MODEL=anthropic/claude-3.5-sonnet
+### Step 3: Configure GitHub Variables
 
-# Jira Input Configuration (for fetching project docs)
-JIRA_URL=https://your-domain.atlassian.net
-JIRA_EMAIL=your-email@company.com
-JIRA_API_TOKEN=your_jira_api_token
-JIRA_PROJECT_KEY=YOUR_PROJECT_KEY
-JIRA_TICKET_ID=PROJ-123
-JIRA_FETCH_FIELDS=summary,description,customfield_10000
-JIRA_MAX_RESULT=100
+Go to your repository → **Settings** → **Secrets and Variables** → **Actions** → **Variables** tab
 
-# Jira Output Configuration (for writing results to Confluence)
-JIRA_URL_OUTPUT=https://your-domain.atlassian.net
-JIRA_EMAIL_OUTPUT=your-email@company.com
-JIRA_API_TOKEN_OUTPUT=your_jira_api_token
-JIRA_SPACE_KEY_OUTPUT=MyTestSpace
+**Add the following Variables:**
 
-# Test Report Configuration
-REPORT_FILE_PATH=coverage/ut-results.json
-USE_FOR=GenerateTestCasesReport_API
+| Variable Name | Description | Example | Required |
+|--------------|-------------|---------|----------|
+| `JIRA_PROJECT_KEY` | Your JIRA project key (also used for branch validation) | `TEL` | ✅ Yes |
+| `JIRA_URL` | Jira instance URL | `https://company.atlassian.net` | ✅ Yes |
+| `JIRA_EMAIL` | Jira email for authentication | `user@company.com` | ✅ Yes |
+| `JIRA_URL_OUTPUT` | Jira URL for output | `https://company.atlassian.net` | ✅ Yes |
+| `JIRA_EMAIL_OUTPUT` | Jira email for output | `user@company.com` | ✅ Yes |
+| `JIRA_SPACE_KEY_OUTPUT` | Confluence space key | `MYSPACE` | ✅ Yes |
+| `OPEN_ROUTER_MODEL` | AI model to use | `anthropic/claude-3.5-sonnet` | ✅ Yes |
+| `DOCKER_USERNAME` | Docker Hub username | `myusername` | ✅ Yes |
+| `USE_FOR` | Type of analysis | `GenerateTestCasesReport_API` or `GenerateTestCasesReport_UI` | ✅ Yes |
+| `AWS_REGION_UT` | AWS region | `us-east-1` | ⚠️ Optional |
+| `S3_BUCKET_NAME_UT` | S3 bucket name | `my-bucket` | ⚠️ Optional |
+| `PROJECT_DOCUMENT_PATH` | Path to project docs in S3 | `docs/project.md` | ⚠️ Optional |
 
-# Presidio Services (for local testing)
-PRESIDIO_ANALYZE_URL=http://localhost:5002/analyze
-PRESIDIO_ANONYMIZE_URL=http://localhost:5001/anonymize
+### Step 4: Setup Your Project
 
-# Vector Store Configuration
-VECTOR_STORE_TYPE=QDRANT
-VECTOR_STORE_URL=http://127.0.0.1:6333
+**For Angular Projects:**
 
-# AWS Configuration (Optional - for S3 storage)
-AWS_ACCESS_KEY=your_aws_access_key
-AWS_SECRET_KEY=your_aws_secret_key
-AWS_REGION=us-east-1
-S3_BUCKET_NAME=your_bucket_name
-PROJECT_DOCUMENT_PATH=path/to/project/docs
-
-# Docker Hub Credentials
-DOCKER_USERNAME=your_docker_username
-DOCKER_PASSWORD=your_docker_password
-```
-
-### Step 2: Understanding Configuration Variables
-
-#### OpenRouter AI Configuration
-- **OPEN_ROUTER_API_KEY**: Your API key from https://openrouter.ai
-- **OPEN_ROUTER_MODEL**: AI model to use (e.g., `anthropic/claude-3.5-sonnet`, `openai/gpt-4`)
-- **USE_FOR**: Purpose of analysis
-  - `GenerateTestCasesReport_API` - For API/Backend test analysis
-  - `GenerateTestCasesReport_UI` - For UI/Frontend test analysis
-
-#### Jira Configuration (Input)
-Used to fetch project documentation from Confluence:
-- **JIRA_URL**: Your Jira instance URL
-- **JIRA_EMAIL**: Email for API authentication
-- **JIRA_API_TOKEN**: Generate from: https://id.atlassian.com/manage/api-tokens
-- **JIRA_PROJECT_KEY**: Confluence project/space key
-
-#### Jira Configuration (Output)
-Used to publish analysis results to Confluence:
-- **JIRA_URL_OUTPUT**: Jira instance URL (can be same as input)
-- **JIRA_EMAIL_OUTPUT**: Email for API authentication
-- **JIRA_API_TOKEN_OUTPUT**: API token for output
-- **JIRA_SPACE_KEY_OUTPUT**: Confluence space where results will be published
-
-#### AWS Configuration (Optional)
-Only required if storing prompts or project documents in S3:
-- **AWS_ACCESS_KEY**: AWS access key ID
-- **AWS_SECRET_KEY**: AWS secret access key
-- **AWS_REGION**: Region where S3 bucket is hosted
-- **S3_BUCKET_NAME**: Bucket containing prompts/documents
-
-## Project-Specific Setup
-
-### For Angular Projects
-
-1. **Install karma-json-result-reporter**:
+1. Install required dependency:
 ```bash
 npm install --save-dev karma-json-result-reporter
 ```
 
-2. **Update karma.conf.js**:
+2. Copy the utility script:
+```bash
+curl -o getTestUtil.js \
+  https://raw.githubusercontent.com/sourcefuse/check-quality-of-unit-testcases/main/src/angular/getTestUtil.js
+```
+
+3. Update `karma.conf.js`:
 ```javascript
 module.exports = function(config) {
   config.set({
@@ -172,25 +126,17 @@ module.exports = function(config) {
       require('karma-json-result-reporter'), // Add this
       // ... other plugins
     ],
-
     reporters: ['progress', 'json-result'], // Add 'json-result'
-
     jsonResultReporter: {
       outputFile: 'karma-result.json',
       isSynchronous: true
     },
-
     // ... rest of config
   });
 };
 ```
 
-3. **Copy the utility script**:
-```bash
-cp src/angular/getTestUtil.js ./getTestUtil.js
-```
-
-4. **Update package.json**:
+4. Update `package.json`:
 ```json
 {
   "scripts": {
@@ -200,9 +146,15 @@ cp src/angular/getTestUtil.js ./getTestUtil.js
 }
 ```
 
-### For LoopBack Projects
+**For LoopBack Projects:**
 
-1. **Update .mocharc.json** (or create if not exists):
+1. Copy the utility script:
+```bash
+curl -o updateForReport.js \
+  https://raw.githubusercontent.com/sourcefuse/check-quality-of-unit-testcases/main/src/loopback/updateForReport.js
+```
+
+2. Update or create `.mocharc.json`:
 ```json
 {
   "exit": true,
@@ -213,12 +165,7 @@ cp src/angular/getTestUtil.js ./getTestUtil.js
 }
 ```
 
-2. **Copy the utility script**:
-```bash
-cp src/loopback/updateForReport.js ./updateForReport.js
-```
-
-3. **Update package.json**:
+3. Update `package.json`:
 ```json
 {
   "scripts": {
@@ -229,8 +176,104 @@ cp src/loopback/updateForReport.js ./updateForReport.js
 }
 ```
 
-4. **For Monorepo (Lerna) Projects**:
-The LoopBack script supports monorepos with the following structure:
+### Step 5: Update Workflow for Your Project Type
+
+Edit `.github/workflows/test-quality-check.yml` and uncomment the section for your project:
+
+**For Angular:**
+```yaml
+- name: Build
+  run: |
+    npm install
+    npm run test:report  # Uncomment this for Angular
+```
+
+**For LoopBack:**
+```yaml
+- name: Build
+  run: |
+    npm install
+    npm run test:report:collect  # Uncomment this for LoopBack
+```
+
+### Step 6: Create a Test Pull Request
+
+1. Create a new branch following the naming convention:
+```bash
+git checkout -b TEL-123-add-feature
+```
+
+2. Make your changes and push:
+```bash
+git add .
+git commit -m "Add new feature"
+git push origin TEL-123-add-feature
+```
+
+3. Create a Pull Request on GitHub
+
+4. Watch the workflow run:
+   - ✅ Branch name validation
+   - ✅ Test execution
+   - ✅ Quality analysis
+   - ✅ PR comment with results
+
+## Configuration
+
+### Understanding Branch Name Validation
+
+The workflow automatically validates that your branch name starts with your `JIRA_PROJECT_KEY`.
+
+**How it works:**
+- Case-insensitive comparison
+- Runs before any other steps
+- Fails fast to save resources
+- Can be skipped by not setting `JIRA_PROJECT_KEY`
+
+**Examples (if JIRA_PROJECT_KEY = "TEL"):**
+- ✅ `TEL-123-add-feature` → Valid
+- ✅ `tel-456-bugfix` → Valid (case insensitive)
+- ✅ `TELESCOPE-789` → Valid (starts with TEL)
+- ❌ `feature/login` → Invalid
+- ❌ `bugfix/TEL-123` → Invalid (doesn't start with TEL)
+
+### Environment Variables Reference
+
+#### OpenRouter AI Configuration
+- **OPEN_ROUTER_API_KEY**: API key from https://openrouter.ai
+- **OPEN_ROUTER_MODEL**: AI model (e.g., `anthropic/claude-3.5-sonnet`, `openai/gpt-4`)
+- **USE_FOR**: Analysis type
+  - `GenerateTestCasesReport_API` - For API/Backend tests
+  - `GenerateTestCasesReport_UI` - For UI/Frontend tests
+
+#### Jira Configuration (Input)
+- **JIRA_URL**: Jira instance URL (e.g., `https://company.atlassian.net`)
+- **JIRA_EMAIL**: Email for authentication
+- **JIRA_API_TOKEN**: Generate from https://id.atlassian.com/manage/api-tokens
+- **JIRA_PROJECT_KEY**: Project key (also used for branch validation)
+
+#### Jira Configuration (Output)
+- **JIRA_URL_OUTPUT**: Jira instance URL (can be same as input)
+- **JIRA_EMAIL_OUTPUT**: Email for output authentication
+- **JIRA_API_TOKEN_OUTPUT**: API token for output
+- **JIRA_SPACE_KEY_OUTPUT**: Confluence space for results
+
+#### AWS Configuration (Optional)
+- **AWS_ACCESS_KEY**: AWS access key ID
+- **AWS_SECRET_KEY**: AWS secret access key
+- **AWS_REGION**: AWS region (e.g., `us-east-1`)
+- **S3_BUCKET_NAME**: Bucket name for prompts/documents
+- **PROJECT_DOCUMENT_PATH**: Path to docs in S3
+
+#### Docker Configuration
+- **DOCKER_USERNAME**: Docker Hub username
+- **DOCKER_PASSWORD**: Docker Hub password
+
+## Project-Specific Setup
+
+### LoopBack Monorepo Support
+
+For Lerna-based monorepos with structure:
 ```
 project-root/
 ├── services/
@@ -251,7 +294,7 @@ node updateForReport.js update-mocha
 node updateForReport.js collect-report
 ```
 
-## Running Locally
+## Testing Locally
 
 ### Step 1: Start Docker Services
 
@@ -270,74 +313,291 @@ docker run -d -p 5002:3000 mcr.microsoft.com/presidio-analyzer:latest
 docker run -d -p 6333:6333 qdrant/qdrant
 ```
 
-### Step 2: Generate Test Reports
+### Step 2: Create .env File
 
-For Angular:
+Create `.env` in project root:
+
 ```bash
+# GitHub Configuration
+GITHUB_TOKEN=your_github_token
+GITHUB_OWNER=your_username
+GITHUB_REPO=your_repo_name
+GITHUB_ISSUE_NUMBER=1
+
+# OpenRouter AI
+OPEN_ROUTER_API_KEY=your_key
+OPEN_ROUTER_API_URL=https://openrouter.ai/api/v1
+OPEN_ROUTER_MODEL=anthropic/claude-3.5-sonnet
+
+# Jira Input
+JIRA_URL=https://company.atlassian.net
+JIRA_EMAIL=user@company.com
+JIRA_API_TOKEN=your_token
+JIRA_PROJECT_KEY=TEL
+JIRA_TICKET_ID=TEL-123
+
+# Jira Output
+JIRA_URL_OUTPUT=https://company.atlassian.net
+JIRA_EMAIL_OUTPUT=user@company.com
+JIRA_API_TOKEN_OUTPUT=your_token
+JIRA_SPACE_KEY_OUTPUT=MYSPACE
+
+# Test Configuration
+REPORT_FILE_PATH=coverage/ut-results.json
+USE_FOR=GenerateTestCasesReport_API
+
+# Docker Services
+PRESIDIO_ANALYZE_URL=http://localhost:5002/analyze
+PRESIDIO_ANONYMIZE_URL=http://localhost:5001/anonymize
+VECTOR_STORE_TYPE=QDRANT
+VECTOR_STORE_URL=http://127.0.0.1:6333
+```
+
+### Step 3: Run Tests and Analysis
+
+```bash
+# For Angular
 npm run test:report
-```
 
-For LoopBack:
-```bash
+# For LoopBack
 npm run test:report:collect
-```
 
-Verify the report exists:
-```bash
+# Verify report exists
 ls -la coverage/ut-results.json
-```
 
-### Step 3: Run the Analysis
-
-```bash
+# Run analysis
 npm start
-# or
-npx ts-node main.ts
 ```
 
 ### Step 4: View Results
 
-- Check console output for analysis summary
-- View detailed report in Confluence (link will be in output)
-- Check `prompt.txt` for the generated prompt (debugging)
+- Check console output for summary
+- View Confluence page (link in output)
+- Check `prompt.txt` for debugging
 
-## GitHub Actions Integration
+## Notifications
 
-### Step 1: Configure Repository Secrets
+The workflow includes built-in failure notifications via PR comments.
 
-Go to your repository → Settings → Secrets and Variables → Actions
+### Built-in PR Comment Notifications
 
-**Add Secrets:**
-- `AWS_ACCESS_KEY_UT` (if using S3)
-- `AWS_SECRET_KEY_UT` (if using S3)
-- `DOCKER_PASSWORD`
-- `JIRA_API_TOKEN`
-- `JIRA_API_TOKEN_OUTPUT`
-- `OPEN_ROUTER_API_KEY`
+When a workflow fails, an automatic comment is posted with:
+- ❌ Failure notification header
+- Workflow run URL
+- Branch name and failed job
+- Possible failure reasons
+- Mention to PR author
 
-**Add Variables:**
-- `AWS_REGION_UT` (e.g., `us-east-1`)
-- `DOCKER_USERNAME`
-- `JIRA_EMAIL`
-- `JIRA_EMAIL_OUTPUT`
-- `JIRA_PROJECT_KEY`
-- `JIRA_SPACE_KEY_OUTPUT`
-- `JIRA_URL`
+### Additional Notification Options
+
+For Slack, Email, Microsoft Teams, and custom webhooks, see:
+📖 **[NOTIFICATION_SETUP.md](./NOTIFICATION_SETUP.md)**
+
+### Quick Slack Setup
+
+Add this step to your workflow after the quality checker:
+
+```yaml
+- name: Notify Slack on Failure
+  if: failure()
+  run: |
+    curl -X POST -H 'Content-type: application/json' \
+    --data '{
+      "text":"❌ Test Quality Check Failed\nRepo: ${{ github.repository }}\nBranch: ${{ github.head_ref }}\nPR: ${{ github.event.pull_request.html_url }}"
+    }' \
+    ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+**Required Secret:** Add `SLACK_WEBHOOK_URL` to repository secrets
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. Branch Name Validation Fails
+
+**Error:** `❌ Error: Branch name must start with 'XXX'`
+
+**Solution:**
+- Branch must start with `JIRA_PROJECT_KEY`
+- Validation is case-insensitive
+- Format: `JIRA_KEY-NUMBER-description`
+- Examples: `TEL-123-feature`, `PROJ-456-bugfix`
+
+**Common mistakes:**
+- ❌ `feature/TEL-123` (doesn't start with key)
+- ✅ `TEL-123-feature` (correct)
+- ✅ `tel-456-bugfix` (correct, case insensitive)
+
+#### 2. Report File Not Found
+
+**Error:** Report file not found at `coverage/ut-results.json`
+
+**Solution:**
+- Verify tests ran successfully
+- Check report path: `ls -la coverage/ut-results.json`
+- For Angular: Ensure `getTestUtil.js` is executed
+- For LoopBack: Ensure `updateForReport.js collect-report` ran
+
+#### 3. Docker Services Not Starting
+
+**Error:** Cannot connect to Docker services
+
+**Solution:**
+```bash
+# Check port availability
+lsof -i :5001
+lsof -i :5002
+lsof -i :6333
+
+# Stop existing containers
+docker ps
+docker stop <container_id>
+
+# Restart services
+docker run -d -p 5001:3000 mcr.microsoft.com/presidio-anonymizer:latest
+docker run -d -p 5002:3000 mcr.microsoft.com/presidio-analyzer:latest
+docker run -d -p 6333:6333 qdrant/qdrant
+```
+
+#### 4. Jira Authentication Failed
+
+**Error:** 401 Unauthorized or 403 Forbidden
+
+**Solution:**
+- Verify API token: https://id.atlassian.com/manage/api-tokens
+- Check email matches token owner
+- Ensure URL format: `https://domain.atlassian.net` (no trailing slash)
+- Verify user has project/space access
+
+#### 5. OpenRouter AI API Errors
+
+**Error:** API key invalid or rate limit exceeded
+
+**Solution:**
+- Verify API key is valid
+- Check model name: https://openrouter.ai/models
+- Ensure sufficient credits in account
+- Review rate limits
+
+#### 6. Confluence Output Error
+
+**Error:** `Confluence Output details not set`
+
+**Solution:**
+All four variables must be set:
 - `JIRA_URL_OUTPUT`
-- `OPEN_ROUTER_MODEL` (e.g., `anthropic/claude-3.5-sonnet`)
-- `PROJECT_DOCUMENT_PATH` (if using S3)
-- `S3_BUCKET_NAME_UT` (if using S3)
-- `USE_FOR` (e.g., `GenerateTestCasesReport_API`)
+- `JIRA_EMAIL_OUTPUT`
+- `JIRA_API_TOKEN_OUTPUT`
+- `JIRA_SPACE_KEY_OUTPUT`
 
-### Step 2: Create Workflow File
+#### 7. Workflow Fails Silently
 
-Create `.github/workflows/test-quality-check.yml`:
+**Solution:**
+- Check all secrets are configured
+- Verify repository permissions: Settings → Actions → General
+- Review workflow logs in Actions tab
+- Ensure `GITHUB_TOKEN` has `pull-requests: write` permission
+
+### Debug Mode
+
+Enable detailed logging:
+
+```bash
+# View generated prompt
+cat prompt.txt
+
+# Check Docker logs
+docker logs <container_id>
+
+# View workflow logs
+# Go to Actions tab → Select workflow run → View logs
+```
+
+### Getting Help
+
+If issues persist:
+
+1. **Check Logs** - Review console output and error messages
+2. **Verify Configuration** - Double-check all secrets and variables
+3. **Test Services** - Ensure Docker services are running (for local)
+4. **GitHub Issues** - Report at https://github.com/sourcefuse/check-quality-of-unit-testcases/issues
+5. **Contact** - Email vishal.gupta@sourcefuse.com
+
+## Best Practices
+
+### Security
+- ❌ Never commit `.env` files to version control
+- ✅ Use GitHub Secrets for sensitive data
+- ✅ Rotate API tokens regularly
+- ✅ Use separate tokens for input/output if possible
+
+### Performance
+- ✅ Use specific AI models for faster response
+- ✅ Limit test report size for large projects
+- ✅ Enable caching in CI/CD
+- ✅ Branch validation fails fast to save resources
+
+### Quality
+- ✅ Review AI analysis regularly
+- ✅ Combine with manual code reviews
+- ✅ Track quality metrics over time
+- ✅ Adjust prompts in `prompts/` directory as needed
+
+### Maintenance
+- ✅ Keep dependencies updated
+- ✅ Monitor OpenRouter AI credits
+- ✅ Clean up old Confluence pages periodically
+- ✅ Review and update workflow configuration
+
+### Branch Naming
+- ✅ Always use JIRA ticket numbers
+- ✅ Follow format: `JIRA_KEY-NUMBER-description`
+- ✅ Use descriptive names: `TEL-123-add-user-authentication`
+- ❌ Avoid prefixes before JIRA key: `feature/TEL-123`
+
+## Version History
+
+### V1.2.0 (Latest)
+- ✨ Added branch name validation with JIRA_PROJECT_KEY
+- ✨ Case-insensitive branch name checking
+- ✨ Added "reopened" trigger for pull requests
+- ✨ Built-in failure notifications via PR comments
+- 📚 Comprehensive notification setup guide
+- 🔧 Improved workflow organization
+
+### V1.1.0
+- 📚 Comprehensive SETUP_GUIDE.md documentation
+- 🎯 Framework-specific setup for Angular and LoopBack
+- 💬 Enhanced error messages
+
+### V1.0.0
+- 🚀 Initial release
+- 🤖 AI-powered test quality analysis
+- 🔗 Jira/Confluence integration
+
+## Usage in GitHub Actions
+
+### Latest Version (Recommended)
+
+```yaml
+- uses: sourcefuse/check-quality-of-unit-testcases@V1.2.0
+```
+
+### Specific Versions
+
+```yaml
+- uses: sourcefuse/check-quality-of-unit-testcases@V1.1.0
+- uses: sourcefuse/check-quality-of-unit-testcases@V1.0.0
+```
+
+### Complete Workflow Example
 
 ```yaml
 name: Test Quality Check
 on:
   pull_request:
-    types: [opened, edited, synchronize]
+    types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: write
@@ -349,189 +609,60 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4
 
-      - name: Use Node.js 18
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 23
 
-      # For Angular Projects
-      - name: Run Tests (Angular)
+      - name: Run Tests
         run: |
           npm install
           npm run test:report
 
-      # For LoopBack Projects
-      # - name: Run Tests (LoopBack)
-      #   run: |
-      #     npm install
-      #     npm run test:report:collect
-
-      - name: Run Test Quality Checker
-        uses: sfvishalgupta/check-quality-of-unit-testcases@v3.0
+      - uses: sourcefuse/check-quality-of-unit-testcases@V1.2.0
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          # OpenRouter AI
           OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
           OPEN_ROUTER_MODEL: ${{ vars.OPEN_ROUTER_MODEL }}
-          USE_FOR: ${{ vars.USE_FOR }}
-
-          # Jira Input
           JIRA_URL: ${{ vars.JIRA_URL }}
           JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-
-          # Jira Output
           JIRA_URL_OUTPUT: ${{ vars.JIRA_URL_OUTPUT }}
           JIRA_EMAIL_OUTPUT: ${{ vars.JIRA_EMAIL_OUTPUT }}
           JIRA_API_TOKEN_OUTPUT: ${{ secrets.JIRA_API_TOKEN_OUTPUT }}
           JIRA_SPACE_KEY_OUTPUT: ${{ vars.JIRA_SPACE_KEY_OUTPUT }}
-
-          # Docker
           DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-
-          # AWS (Optional)
-          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_UT || '' }}
-          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY_UT || '' }}
-          AWS_REGION: ${{ vars.AWS_REGION_UT || '' }}
-          S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME_UT || '' }}
-          PROJECT_DOCUMENT_PATH: ${{ vars.PROJECT_DOCUMENT_PATH || '' }}
+          USE_FOR: ${{ vars.USE_FOR }}
 ```
-
-### Step 3: Test the Workflow
-
-1. Create a new branch
-2. Make code changes
-3. Create a pull request
-4. Watch the workflow run in Actions tab
-5. Check PR comments for the analysis summary
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. "Report file not found" Error
-
-**Solution:**
-- Verify test report exists: `ls -la coverage/ut-results.json`
-- Check test execution completed successfully
-- Ensure correct `REPORT_FILE_PATH` in configuration
-
-#### 2. Docker Services Not Starting
-
-**Solution:**
-```bash
-# Check port availability
-lsof -i :5001
-lsof -i :5002
-lsof -i :6333
-
-# Kill existing processes if needed
-docker ps
-docker stop <container_id>
-
-# Restart services
-docker run -d -p 5001:3000 mcr.microsoft.com/presidio-anonymizer:latest
-docker run -d -p 5002:3000 mcr.microsoft.com/presidio-analyzer:latest
-docker run -d -p 6333:6333 qdrant/qdrant
-```
-
-#### 3. Jira Authentication Failed
-
-**Solution:**
-- Verify API token is valid: https://id.atlassian.com/manage/api-tokens
-- Check email matches the token owner
-- Ensure Jira URL format: `https://domain.atlassian.net` (no trailing slash)
-- Verify user has access to the project/space
-
-#### 4. OpenRouter AI API Errors
-
-**Solution:**
-- Verify API key is valid
-- Check model name is correct (see https://openrouter.ai/models)
-- Ensure sufficient credits in OpenRouter account
-- Review rate limits
-
-#### 5. "Confluence Output details not set" Error
-
-**Solution:**
-All four output variables must be set:
-- `JIRA_URL_OUTPUT`
-- `JIRA_EMAIL_OUTPUT`
-- `JIRA_API_TOKEN_OUTPUT`
-- `JIRA_SPACE_KEY_OUTPUT`
-
-#### 6. GitHub Actions Workflow Fails
-
-**Solution:**
-- Check all secrets are properly configured
-- Verify repository permissions (Settings → Actions → General)
-- Review workflow logs for specific errors
-- Ensure `GITHUB_TOKEN` has required permissions
-
-### Debug Mode
-
-Enable detailed logging by checking:
-```bash
-# View generated prompt
-cat prompt.txt
-
-# Check Docker logs
-docker logs <container_id>
-
-# View local logs (if running locally)
-tail -f logs/*.log
-```
-
-### Getting Help
-
-If you encounter issues:
-
-1. **Check Logs**: Review console output and error messages
-2. **Verify Configuration**: Double-check all environment variables
-3. **Test Services**: Ensure Docker services are running
-4. **GitHub Issues**: Report issues at https://github.com/sfvishalgupta/check-quality-of-unit-testcases/issues
-5. **Contact**: Email vishal.gupta@sourcefuse.com
-
-## Best Practices
-
-1. **Security**
-   - Never commit `.env` files to version control
-   - Use GitHub Secrets for sensitive data
-   - Rotate API tokens regularly
-
-2. **Performance**
-   - Use specific AI models for faster response
-   - Limit test report size for large projects
-   - Enable caching in CI/CD
-
-3. **Quality**
-   - Review AI analysis regularly
-   - Combine with manual code reviews
-   - Track quality metrics over time
-
-4. **Maintenance**
-   - Keep dependencies updated
-   - Monitor OpenRouter AI credits
-   - Clean up old Confluence pages periodically
 
 ## Next Steps
 
 After successful setup:
 
-1. Run analysis on your first PR
-2. Review the Confluence output
-3. Adjust prompts in `prompts/` directory if needed
-4. Configure quality thresholds for your team
-5. Integrate with other CI/CD tools
+1. ✅ Create a branch: `git checkout -b TEL-123-my-feature`
+2. ✅ Make changes and create a PR
+3. ✅ Review the quality analysis in Confluence
+4. ✅ Adjust prompts in `prompts/` directory if needed
+5. ✅ Configure additional notifications (Slack, Email, Teams)
+6. ✅ Set up quality thresholds for your team
+7. ✅ Integrate with other CI/CD tools
+
+## Additional Resources
+
+- 📖 [Notification Setup Guide](./NOTIFICATION_SETUP.md) - Configure Slack, Email, Teams notifications
+- 🔗 [OpenRouter AI Models](https://openrouter.ai/models) - Available AI models
+- 🔗 [Jira API Tokens](https://id.atlassian.com/manage/api-tokens) - Generate API tokens
+- 🔗 [GitHub Actions Documentation](https://docs.github.com/en/actions) - GitHub Actions reference
 
 ## License
 
 MIT © 2025 Vishal Gupta
+
+## Support
+
+- 📧 Email: vishal.gupta@sourcefuse.com
+- 🐛 Issues: https://github.com/sourcefuse/check-quality-of-unit-testcases/issues
+- 📚 Documentation: https://github.com/sourcefuse/check-quality-of-unit-testcases

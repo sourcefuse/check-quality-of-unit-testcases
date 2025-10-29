@@ -105,7 +105,7 @@ runs:
               cd ${{ github.action_path }}
               if [ ! -d "OpenRouterAICore" ]; then
                   git clone --depth=1 https://github.com/sourcefuse/OpenRouterAICore.git OpenRouterAICore
-                  cd OpenRouterAICore && npm install && cd .. && npm install
+                  cd OpenRouterAICore && npm install --legacy-peer-deps && cd .. && npm install --legacy-peer-deps
               fi
 
         - name: Set up Docker Buildx
