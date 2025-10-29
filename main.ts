@@ -193,7 +193,7 @@ async function processModelResponses(
 async function main(): Promise<string> {
     // Log API key verification (last 10 characters for security)
     const apiKey = GlobalENV.OPEN_ROUTER_API_KEY || '';
-    const maskedKey = apiKey.length > 10 ? '...' + apiKey.slice(-10) : 'NOT_SET';
+    const maskedKey = apiKey.length > 5 ? '...' + apiKey.slice(-5) : 'NOT_SET';
     console.log(`🔑 OpenRouter API Key (last 10 chars): ${maskedKey}`);
     logger.info(`OpenRouter API Key verification: ${maskedKey}`);
 
