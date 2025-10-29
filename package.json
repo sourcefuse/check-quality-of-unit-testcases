@@ -10,7 +10,10 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
-    "start": "ts-node main.ts"
+    "start": "ts-node main.ts",
+    "analyze-project": "claude --print --dangerously-skip-permissions < run.md",
+    "generate-tests": "ts-node generateTests.ts",
+    "full-workflow": "npm run generate-tests && npm run analyze-project"
   },
   "keywords": [
     "actions"

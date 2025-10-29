@@ -9,48 +9,70 @@
  * 5. Creating pull requests with generated tests
  */
 
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
     GetJiraTitle,
     GetJiraId,
     GetProjectDocument,
-    GetUserPrompt,
     CreateUpdateComments,
-    GetPullRequestDiff,
 } from 'OpenRouterAICore/thirdPartyUtils';
 import { ConfluenceSearchTool } from 'OpenRouterAICore/tools';
-import { ERRORS, ENV_VARIABLES as GlobalENV } from 'OpenRouterAICore/environment';
-import { ENV_VARIABLES } from './environment';
+import { ENV_VARIABLES as GlobalENV } from 'OpenRouterAICore/environment';
 import { GetStore } from 'OpenRouterAICore/store/utils';
 import { logger } from 'OpenRouterAICore/pino';
 import { CustomError } from 'OpenRouterAICore/customError';
 import { execSync } from 'child_process';
 
-interface JiraTicketData {
-    id: string;
-    title: string;
-    description: string;
-    acceptanceCriteria: string[];
-    issueType: string;
-    priority: string;
-    customFields?: Record<string, any>;
+// Import helper functions and types
+import {
+    JiraTicketData,
+    ProjectContext,
+    PageData,
+    validateEnvironmentVariables,
+    sanitizeText,
+    extractAcceptanceCriteria,
+    extractTechnicalTerms,
+    ensureTmpDirectory,
+    writeTmpFile,
+    readPackageJson,
+    extractPageIds,
+    createPageData,
+    generatePageIdReport,
+    generatePageCsv,
+    generateJiraMarkdown,
+    generateProjectDocumentationMarkdown,
+    createErrorMessage,
+    logError,
+    validateJiraData,
+    validateProjectContext,
+    FRAMEWORK_DETECTION,
+    SEARCH_STRATEGIES
+} from './generateTests.helpers';
+
+/**
+ * Main execution function
+ */
+async function main(): Promise<void> {
+    try {
+        logger.info('Starting AI-powered unit test generation...');
+        
+        // logger.info('Fetching JIRA ticket details...');
+        const jiraData = await fetchJiraTicketDetails();
+        console.log(jiraData);
+        // Step 3: Fetch Confluence documentation (enhanced with JIRA context)
+        logger.info('Fetching project documentation from Confluence...');
+        // await fetchConfluenceDocumentation(jiraData);
+        
+        logger.info('Test generation pipeline setup completed successfully!');
+        
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(`Test generation failed: ${errorMessage}`);
+        throw error;
+    }
 }
 
-interface ProjectContext {
-    framework: 'React' | 'Angular' | 'Loopback' | 'Unknown';
-    testingFramework: string;
-    projectStructure: string[];
-    dependencies: Record<string, string>;
-    existingPatterns: string[];
-}
-
-interface GeneratedTest {
-    fileName: string;
-    content: string;
-    framework: string;
-    coverage: string[];
-}
 
 /**
  * Detects the project framework by analyzing package.json and project structure
@@ -168,11 +190,12 @@ function analyzeExistingTests(framework: string): string[] {
 }
 
 /**
- * Fetches detailed JIRA ticket information
+ * Fetches detailed JIRA ticket information and writes to tmp/Jira.md
  */
 async function fetchJiraTicketDetails(): Promise<JiraTicketData> {
-    const jiraId = await GetJiraId();
+    const jiraId = GetJiraId();
     const jiraTitle = await GetJiraTitle();
+    
     
     logger.info(`Fetching JIRA ticket details for: ${jiraId}`);
     
@@ -194,23 +217,55 @@ async function fetchJiraTicketDetails(): Promise<JiraTicketData> {
         
         const jiraData = await response.json();
         
+        
         // Extract acceptance criteria from description or custom fields
         const description = jiraData.fields.description?.content?.[0]?.content?.[0]?.text || '';
         const acceptanceCriteria = extractAcceptanceCriteria(description);
         
-        return {
+        const ticketData: JiraTicketData = {
             id: jiraId,
             title: jiraTitle,
             description,
             acceptanceCriteria,
             issueType: jiraData.fields.issuetype?.name || 'Story',
-            priority: jiraData.fields.priority?.name || 'Medium',
-            customFields: jiraData.fields
+            priority: jiraData.fields.priority?.name || 'Medium'
         };
+        
+        // Create tmp folder if it doesn't exist
+        const tmpDir = path.join(process.cwd(), 'tmp');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+            logger.info(`Created tmp directory: ${tmpDir}`);
+        }
+        
+        // Write JIRA data to Jira.md file
+        const jiraMarkdown = `# JIRA Ticket Details
+
+## Ticket Information
+- **ID**: ${ticketData.id}
+- **Title**: ${ticketData.title}
+- **Type**: ${ticketData.issueType}
+- **Priority**: ${ticketData.priority}
+
+## Description
+${ticketData.description}
+
+## Acceptance Criteria
+${ticketData.acceptanceCriteria.length > 0 ? ticketData.acceptanceCriteria.map(ac => `- ${ac}`).join('\n') : 'No acceptance criteria found'}
+---
+*Generated: ${new Date().toISOString()}*
+`;
+        
+        const jiraFilePath = path.join(tmpDir, 'Jira.md');
+        fs.writeFileSync(jiraFilePath, jiraMarkdown);
+        logger.info(`JIRA details written to: ${jiraFilePath}`);
+        
+        return ticketData;
     } catch (error) {
         logger.error(`Error fetching JIRA details: ${error}`);
-        // Return basic data if API call fails
-        return {
+        
+        // Create basic data if API call fails
+        const ticketData: JiraTicketData = {
             id: jiraId,
             title: jiraTitle,
             description: '',
@@ -218,440 +273,727 @@ async function fetchJiraTicketDetails(): Promise<JiraTicketData> {
             issueType: 'Story',
             priority: 'Medium'
         };
+        
+        // Still write to file even with basic data
+        const tmpDir = path.join(process.cwd(), 'tmp');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+            logger.info(`Created tmp directory: ${tmpDir}`);
+        }
+        
+        const jiraMarkdown = `# JIRA Ticket Details (Basic)
+
+## Ticket Information
+- **ID**: ${ticketData.id}
+- **Title**: ${ticketData.title}
+- **Type**: ${ticketData.issueType}
+- **Priority**: ${ticketData.priority}
+
+## Error
+Failed to fetch detailed JIRA information. Using basic data.
+
+---
+*Generated: ${new Date().toISOString()}*
+`;
+        
+        const jiraFilePath = path.join(tmpDir, 'Jira.md');
+        fs.writeFileSync(jiraFilePath, jiraMarkdown);
+        logger.info(`Basic JIRA details written to: ${jiraFilePath}`);
+        
+        return ticketData;
     }
 }
 
 /**
  * Extracts acceptance criteria from JIRA description
  */
-function extractAcceptanceCriteria(description: string): string[] {
-    const criteria: string[] = [];
+// extractAcceptanceCriteria function moved to helpers
+
+/**
+ * Finds related Confluence documents using vector similarity search based on JIRA ticket
+ */
+async function findRelatedConfluenceDocuments(jiraData: JiraTicketData): Promise<string[]> {
+    logger.info('Finding related Confluence documents using vector search...');
     
-    // Look for common patterns in acceptance criteria
-    const patterns = [
-        /Given.*When.*Then.*/gi,
-        /As a.*I want.*So that.*/gi,
-        /- \[[ x]\].*/gi,
-        /\d+\..*/gi
-    ];
-    
-    patterns.forEach(pattern => {
-        const matches = description.match(pattern);
-        if (matches) {
-            criteria.push(...matches);
+    try {
+        // Validate required environment variables first
+        if (!GlobalENV.JIRA_PROJECT_KEY || GlobalENV.JIRA_PROJECT_KEY.trim() === '') {
+            logger.error('JIRA_PROJECT_KEY not set in environment variables');
+            return [];
         }
-    });
-    
-    return criteria;
+        
+        if (!GlobalENV.OPEN_ROUTER_MODEL || GlobalENV.OPEN_ROUTER_MODEL.trim() === '') {
+            logger.error('OPEN_ROUTER_MODEL not set in environment variables');
+            return [];
+        }
+        
+        if (!GlobalENV.OPEN_ROUTER_API_URL || GlobalENV.OPEN_ROUTER_API_URL.trim() === '') {
+            logger.warn('OPEN_ROUTER_API_URL not set in environment variables, skipping vector search');
+            return [];
+        }
+        
+        const store = GetStore();
+        
+        // Create search query from JIRA ticket information
+        const searchQuery = createJiraSearchQuery(jiraData);
+        logger.info(`Vector search query: ${searchQuery}`);
+        
+        // Validate search query
+        if (!searchQuery || searchQuery.trim().length === 0) {
+            logger.warn('Empty search query generated from JIRA data');
+            return [];
+        }
+        
+        // Use the vector store to search for related documents
+        try {
+            const modelName = GlobalENV.OPEN_ROUTER_MODEL.split(',')[0].trim();
+            const indexName = `${GlobalENV.JIRA_PROJECT_KEY}-confluence-docs`;
+            
+            logger.info(`Using model: ${modelName}`);
+            logger.info(`Using index: ${indexName}`);
+            logger.info(`API URL: ${GlobalENV.OPEN_ROUTER_API_URL}`);
+            
+            // Try multiple search strategies for better coverage
+            const searchStrategies = [
+                // Original search query
+                `Find and return relevant documentation for: ${searchQuery}`,
+                
+                // TDD-specific search
+                `Find TDD (Test Driven Development) documentation, technical design documents, or API specifications for ${jiraData.id} Virtual Background API management endpoints`,
+                
+                // API-specific search
+                `Find API documentation, technical specifications, or backend implementation details for virtual background management: add, update, delete, set default`,
+                
+                // Page ID specific search (if we know it exists)
+                `Find Confluence page 3999106207 or any TDD document related to ${jiraData.id}`,
+                
+                // Architecture search
+                `Find architecture documentation, technical design, or system specifications for ${jiraData.title}`
+            ];
+            
+            let allResults: string[] = [];
+            
+            for (let i = 0; i < searchStrategies.length; i++) {
+                const strategy = searchStrategies[i];
+                logger.info(`Trying search strategy ${i + 1}/${searchStrategies.length}: ${strategy.substring(0, 100)}...`);
+                
+                try {
+                    const vectorResponse = await store.generate(
+                        modelName,
+                        indexName,
+                        strategy
+                    );
+                    
+                    if (vectorResponse && vectorResponse.trim().length > 50) {
+                        logger.info(`Strategy ${i + 1} found documentation (${vectorResponse.length} characters)`);
+                        allResults.push(`## Search Strategy ${i + 1} Results:\n\n${vectorResponse}`);
+                        
+                        // Check if this result mentions TDD or the page ID
+                        if (vectorResponse.toLowerCase().includes('tdd') || 
+                            vectorResponse.toLowerCase().includes('test driven') ||
+                            vectorResponse.toLowerCase().includes('3999106207') ||
+                            vectorResponse.toLowerCase().includes('technical design')) {
+                            logger.info(`Strategy ${i + 1} found potential TDD documentation!`);
+                        }
+                    } else {
+                        logger.warn(`Strategy ${i + 1} returned no relevant results`);
+                    }
+                    
+                    // Add delay between requests to avoid rate limiting
+                    if (i < searchStrategies.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                    
+                } catch (strategyError) {
+                    logger.warn(`Strategy ${i + 1} failed: ${strategyError instanceof Error ? strategyError.message : String(strategyError)}`);
+                    // Continue with next strategy
+                }
+            }
+            
+            // If we have results, try to also get the specific TDD page as a fallback
+            if (allResults.length > 0) {
+                // Try to get the specific TDD page via Confluence API if it's not in the vector results
+                const hasTDDContent = allResults.some(result => 
+                    result.toLowerCase().includes('3999106207') || 
+                    result.toLowerCase().includes('tdd') ||
+                    result.toLowerCase().includes('test driven')
+                );
+                
+                if (!hasTDDContent) {
+                    logger.info('TDD document not found in vector search, attempting direct Confluence page lookup for page 3999106207');
+                    try {
+                        const tddContent = await fetchSpecificConfluencePage('3999106207');
+                        if (tddContent) {
+                            allResults.unshift(`## TDD Document (Page 3999106207) - Direct Lookup:\n\n${tddContent}`);
+                            logger.info('Successfully retrieved TDD document via direct page lookup');
+                        }
+                    } catch (tddError) {
+                        logger.warn(`Failed to fetch TDD page directly: ${tddError}`);
+                    }
+                }
+                
+                const combinedResults = allResults.join('\n\n---\n\n');
+                logger.info(`Found ${allResults.length} sets of results via multiple search strategies (${combinedResults.length} total characters)`);
+                return [combinedResults];
+            } else {
+                logger.warn('No relevant documentation found via any search strategy, trying direct page lookup');
+                
+                // Last resort: try direct page lookup
+                try {
+                    const tddContent = await fetchSpecificConfluencePage('3999106207');
+                    if (tddContent) {
+                        logger.info('Found TDD document via direct page lookup as fallback');
+                        return [`## TDD Document (Page 3999106207) - Direct Lookup:\n\n${tddContent}`];
+                    }
+                } catch (tddError) {
+                    logger.warn(`Failed to fetch TDD page directly: ${tddError}`);
+                }
+                
+                return [];
+            }
+            
+        } catch (searchError) {
+            logger.error(`Vector similarity search failed: ${searchError}`);
+            logger.error(`Error details: ${searchError instanceof Error ? searchError.message : String(searchError)}`);
+            logger.error(`Stack trace: ${searchError instanceof Error ? searchError.stack : 'No stack trace'}`);
+            return [];
+        }
+        
+    } catch (error) {
+        logger.error(`Error finding related Confluence documents: ${error}`);
+        return [];
+    }
 }
 
 /**
- * Fetches project documentation from Confluence
+ * Fetches a specific Confluence page by page ID
  */
-async function fetchConfluenceDocumentation(jiraId: string): Promise<string> {
-    logger.info('Fetching Confluence documentation...');
+async function fetchSpecificConfluencePage(pageId: string): Promise<string | null> {
+    logger.info(`Attempting to fetch Confluence page: ${pageId}`);
     
     try {
-        // Use existing GetProjectDocument function
-        const projectDoc = await GetProjectDocument();
-        
-        // Additionally search for related Confluence pages
+        // Use the Confluence search tool to get the specific page
         const searchTool = ConfluenceSearchTool();
         
-        // Search for documentation related to the JIRA ticket
-        const searchQuery = `${jiraId} OR "${jiraId.split('-')[0]}" type:page`;
-        const searchResults = await searchTool.func(searchQuery);
+        // Try different search approaches for the specific page
+        const searchQueries = [
+            `id:${pageId}`,
+            `id:"${pageId}"`,
+            `page:"${pageId}"`,
+            `TDD AND ${pageId}`,
+            `"Test Driven Development" AND TEL-9591`,
+            `"Technical Design Document" AND "Virtual Background"`,
+            `page:${pageId} AND TDD`,
+            `page:${pageId} AND "test driven"`
+        ];
         
-        // Combine all documentation
-        let combinedDocs = projectDoc;
-        
-        if (searchResults && typeof searchResults === 'string') {
-            combinedDocs += '\n\n--- Additional Documentation ---\n\n' + searchResults;
+        for (const query of searchQueries) {
+            try {
+                logger.info(`Trying direct Confluence search: ${query}`);
+                const result: unknown = await searchTool.func(query);
+                
+                if (result && typeof result === 'string' && result.trim().length > 100) {
+                    // Check if this looks like it contains the TDD content
+                    if (result.toLowerCase().includes('tdd') || 
+                        result.toLowerCase().includes('test driven') ||
+                        result.toLowerCase().includes('technical design') ||
+                        result.toLowerCase().includes(pageId) ||
+                        result.toLowerCase().includes('virtual background')) {
+                        logger.info(`Found potential TDD content via query: ${query} (${result.length} characters)`);
+                        return result;
+                    }
+                }
+                
+                // Small delay between requests
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+            } catch (queryError) {
+                logger.warn(`Query "${query}" failed: ${queryError}`);
+                continue;
+            }
         }
         
-        return combinedDocs;
+        logger.warn(`Could not find page ${pageId} via any Confluence search query`);
+        return null;
+        
+    } catch (error) {
+        logger.error(`Error fetching specific Confluence page ${pageId}: ${error}`);
+        return null;
+    }
+}
+
+/**
+ * Creates a semantic search query from JIRA ticket data
+ */
+function createJiraSearchQuery(jiraData: JiraTicketData): string {
+    const queryParts = [];
+    
+    try {
+        // Add ticket title and description (sanitized)
+        if (jiraData.title && typeof jiraData.title === 'string') {
+            const sanitizedTitle = jiraData.title.replace(/[{}]/g, '').trim();
+            if (sanitizedTitle.length > 0) {
+                queryParts.push(sanitizedTitle);
+            }
+        }
+        
+        if (jiraData.description && typeof jiraData.description === 'string') {
+            const sanitizedDescription = jiraData.description.replace(/[{}]/g, '').trim();
+            if (sanitizedDescription.length > 0) {
+                queryParts.push(sanitizedDescription);
+            }
+        }
+        
+        // Add acceptance criteria (sanitized)
+        if (jiraData.acceptanceCriteria && Array.isArray(jiraData.acceptanceCriteria) && jiraData.acceptanceCriteria.length > 0) {
+            const sanitizedCriteria = jiraData.acceptanceCriteria
+                .map(criterion => typeof criterion === 'string' ? criterion.replace(/[{}]/g, '').trim() : '')
+                .filter(criterion => criterion.length > 0);
+            if (sanitizedCriteria.length > 0) {
+                queryParts.push(sanitizedCriteria.join(' '));
+            }
+        }
+        
+        // Add issue type and priority for context (sanitized)
+        const issueType = (jiraData.issueType && typeof jiraData.issueType === 'string') 
+            ? jiraData.issueType.replace(/[{}]/g, '').trim() 
+            : 'Story';
+        const priority = (jiraData.priority && typeof jiraData.priority === 'string') 
+            ? jiraData.priority.replace(/[{}]/g, '').trim() 
+            : 'Medium';
+        
+        if (issueType.length > 0 || priority.length > 0) {
+            queryParts.push(`${issueType} ${priority}`.trim());
+        }
+        
+        // Extract key technical terms and feature names
+        const technicalTerms = extractTechnicalTerms(jiraData);
+        if (technicalTerms.length > 0) {
+            // Sanitize technical terms too
+            const sanitizedTerms = technicalTerms
+                .map(term => typeof term === 'string' ? term.replace(/[{}]/g, '').trim() : '')
+                .filter(term => term.length > 0);
+            if (sanitizedTerms.length > 0) {
+                queryParts.push(sanitizedTerms.join(' '));
+            }
+        }
+        
+        const finalQuery = queryParts.join(' ').trim();
+        logger.info(`Created search query: "${finalQuery}" (${finalQuery.length} characters)`);
+        
+        return finalQuery;
+        
+    } catch (error) {
+        logger.error(`Error creating JIRA search query: ${error}`);
+        return `${jiraData?.title || ''} ${jiraData?.issueType || 'Story'}`.replace(/[{}]/g, '').trim();
+    }
+}
+
+// extractTechnicalTerms function moved to helpers
+
+/**
+ * Stores Confluence documents in vector database for similarity search
+ */
+async function storeConfluenceDocumentsInVector(documents: Array<{title: string, content: string}>): Promise<void> {
+    if (!documents || documents.length === 0) {
+        logger.info('No documents to store in vector database');
+        return;
+    }
+    
+    logger.info(`Storing ${documents.length} Confluence documents in vector database...`);
+    
+    try {
+        const store = GetStore();
+        
+        let storedCount = 0;
+        for (const doc of documents) {
+            try {
+                // Validate document has required content
+                if (!doc.title || !doc.content || doc.content.trim().length < 10) {
+                    logger.warn(`Skipping document with insufficient content: ${doc.title}`);
+                    continue;
+                }
+                
+                // Create a searchable document with metadata
+                const docText = `${doc.title}\n\n${doc.content}`;
+                
+                // Store document in vector database using the same pattern as main.ts
+                await store.addDocument(`${GlobalENV.JIRA_PROJECT_KEY}-confluence-docs`, docText);
+                storedCount++;
+                
+                logger.info(`Stored document: ${doc.title} (${doc.content.length} characters)`);
+            } catch (docError) {
+                logger.warn(`Failed to store document "${doc.title}": ${docError}`);
+            }
+        }
+        
+        logger.info(`Successfully stored ${storedCount}/${documents.length} Confluence documents in vector database`);
+    } catch (error) {
+        logger.error(`Error storing Confluence documents in vector database: ${error}`);
+    }
+}
+
+/**
+ * Fetches project documentation from Confluence using vector search and writes to tmp/Project.md
+ * First populates vector database with project documentation, then searches for relevant content
+ */
+async function fetchConfluenceDocumentation(jiraData?: JiraTicketData): Promise<string> {
+    logger.info('Fetching and indexing project documentation...');
+    
+    try {
+        // Validate required environment variables
+        if (!GlobalENV.JIRA_PROJECT_KEY || GlobalENV.JIRA_PROJECT_KEY.trim() === '') {
+            throw new Error('JIRA_PROJECT_KEY not set in environment variables');
+        }
+        
+        const store = GetStore();
+        
+        // First, get and store the main project documentation in vector database (like main.ts)
+        logger.info('Adding project documentation to vector database...');
+        const projectDocument = await GetProjectDocument();
+        
+        if (projectDocument && projectDocument.trim().length > 0) {
+            const indexName = `${GlobalENV.JIRA_PROJECT_KEY}-confluence-docs`;
+            logger.info(`Adding document to index: ${indexName}`);
+            await store.addDocument(indexName, projectDocument);
+            logger.info(`Project documentation added to vector database (${projectDocument.length} characters)`);
+        } else {
+            logger.warn('No project documentation found to add to vector database');
+        }
+        
+        // If JIRA data is provided, find related documents using vector search
+        let relatedDocsFromVector: string[] = [];
+        if (jiraData) {
+            logger.info('Finding JIRA-related documents using vector search...');
+            
+            // Try to find related documents using vector search
+            relatedDocsFromVector = await findRelatedConfluenceDocuments(jiraData);
+            if (relatedDocsFromVector.length > 0) {
+                logger.info(`Found ${relatedDocsFromVector.length} related documents via vector search`);
+            }
+        }
+        
+        let formattedDocs = '';
+        let totalPages = 0;
+        
+        // Process only vector-found related documents
+        if (relatedDocsFromVector.length > 0) {
+            relatedDocsFromVector.forEach((docContent, index) => {
+                const docTitle = `Related Document ${index + 1} (Vector Search)`;
+                formattedDocs += formatConfluenceContent(docTitle, docContent);
+                totalPages++;
+            });
+        }
+        
+        // Create tmp folder if it doesn't exist
+        const tmpDir = path.join(process.cwd(), 'tmp');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+            logger.info(`Created tmp directory: ${tmpDir}`);
+        }
+        
+        // Create formatted markdown content with only vector search results
+        const projectMarkdown = `# Project Documentation (Vector Search Results)
+
+## Documentation Summary
+- **Source**: Confluence Vector Search
+- **Vector-Found Documents**: ${relatedDocsFromVector.length}
+- **Total Length**: ${formattedDocs.length} characters
+- **JIRA Context**: ${jiraData ? `${jiraData.id} - ${jiraData.title}` : 'None'}
+- **Generated**: ${new Date().toISOString()}
+
+${jiraData ? `## JIRA Context
+- **Ticket**: ${jiraData.id}
+- **Title**: ${jiraData.title}
+- **Type**: ${jiraData.issueType}
+- **Priority**: ${jiraData.priority}
+- **Description**: ${jiraData.description || 'No description available'}
+
+---` : ''}
+
+${formattedDocs || '## No Related Documents Found\n\nNo related Confluence documentation was found via vector search.\n\nNote: Project documentation has been indexed for future searches.'}
+
+---
+*End of Vector Search Results*
+`;
+        
+        // Write to Project.md file
+        const projectFilePath = path.join(tmpDir, 'Project.md');
+        fs.writeFileSync(projectFilePath, projectMarkdown);
+        logger.info(`Vector search results written to: ${projectFilePath} (${totalPages} documents)`);
+        
+        // Return vector search results
+        return formattedDocs;
+        
     } catch (error) {
         logger.error(`Error fetching Confluence documentation: ${error}`);
+        
+        // Create tmp folder if it doesn't exist
+        const tmpDir = path.join(process.cwd(), 'tmp');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+            logger.info(`Created tmp directory: ${tmpDir}`);
+        }
+        
+        // Write error information to file
+        const errorMarkdown = `# Project Documentation (Vector Search Error)
+
+## Error Details
+- **Source**: Confluence Vector Search (Failed)
+- **Error Time**: ${new Date().toISOString()}
+
+## Error Message
+\`\`\`
+${error}
+\`\`\`
+
+## Status
+No documentation available due to vector search error.
+
+---
+*Error Documentation Generated*
+`;
+        
+        const projectFilePath = path.join(tmpDir, 'Project.md');
+        fs.writeFileSync(projectFilePath, errorMarkdown);
+        logger.info(`Error documentation written to: ${projectFilePath}`);
+        
         return '';
     }
 }
 
 /**
- * Generates the AI prompt for test generation based on framework
+ * Formats Confluence content with proper markdown structure
  */
-function generateTestPrompt(
-    context: ProjectContext, 
-    jiraData: JiraTicketData, 
-    documentation: string
-): string {
-    // Read the claude.md file for prompt templates
-    const claudeMdPath = path.join(__dirname, 'claude.md');
-    let claudeMdContent = '';
+function formatConfluenceContent(title: string, content: string): string {
+    if (!content || content.trim().length === 0) {
+        return `\n\n## ${title}\n\n*No content available*\n\n`;
+    }
+    
+    // Clean up the title
+    const cleanTitle = title.replace(/[#\n\r]/g, '').trim();
+    
+    // Clean up content - remove excessive whitespace but preserve structure
+    const cleanContent = content
+        .replace(/\n\s*\n\s*\n/g, '\n\n') // Remove triple+ newlines
+        .replace(/^\s+|\s+$/g, '') // Trim start/end whitespace
+        .replace(/\r\n/g, '\n'); // Normalize line endings
+    
+    return `\n\n## ${cleanTitle}\n\n${cleanContent}\n\n`;
+}
+
+/**
+ * Attempts to extract individual pages from Confluence search results
+ */
+function extractConfluencePages(searchResults: string): Array<{title: string, content: string}> {
+    const pages: Array<{title: string, content: string}> = [];
     
     try {
-        claudeMdContent = fs.readFileSync(claudeMdPath, 'utf-8');
-    } catch (error) {
-        logger.warn('Could not read claude.md, using default prompts');
-    }
-    
-    let prompt = `
-# AI Test Generation Task
-
-## Project Context
-Framework: ${context.framework}
-Testing Framework: ${context.testingFramework}
-Project Structure: ${JSON.stringify(context.projectStructure, null, 2)}
-Existing Test Patterns: ${context.existingPatterns.join(', ')}
-
-## JIRA Requirements
-Ticket ID: ${jiraData.id}
-Title: ${jiraData.title}
-Type: ${jiraData.issueType}
-Priority: ${jiraData.priority}
-Description: ${jiraData.description}
-Acceptance Criteria:
-${jiraData.acceptanceCriteria.map(ac => `- ${ac}`).join('\n')}
-
-## Project Documentation
-${documentation}
-
-## Task
-`;
-
-    // Add framework-specific prompt based on claude.md content or defaults
-    if (context.framework === 'React') {
-        prompt += `
-Generate comprehensive React unit tests using ${context.testingFramework}.
-Follow the patterns identified in the existing codebase.
-Include:
-- Component rendering tests
-- Props validation
-- User interaction tests (clicks, forms)
-- State management tests
-- Error boundary tests
-- Accessibility tests
-Use @testing-library/react best practices.
-`;
-    } else if (context.framework === 'Angular') {
-        prompt += `
-Generate comprehensive Angular unit tests using ${context.testingFramework}.
-Follow Angular testing best practices with TestBed.
-Include:
-- Component initialization tests
-- Service injection and mocking
-- Input/Output testing
-- Form validation tests
-- HTTP interceptor tests
-- Route guard tests
-Use Jasmine matchers and Angular testing utilities.
-`;
-    } else if (context.framework === 'Loopback') {
-        prompt += `
-Generate comprehensive Loopback unit tests.
-Follow Loopback 4 testing patterns.
-Include:
-- Controller endpoint tests
-- Repository operation tests
-- Service business logic tests
-- Model validation tests
-- Authentication/authorization tests
-- Error handling tests
-Use Loopback testing utilities and sinon for mocking.
-`;
-    }
-    
-    prompt += `
-Generate complete, runnable test files with all necessary imports and setup.
-Ensure tests cover all acceptance criteria from the JIRA ticket.
-Include positive, negative, and edge case scenarios.
-`;
-    
-    return prompt;
-}
-
-/**
- * Generates unit tests using AI
- */
-async function generateUnitTests(
-    prompt: string,
-    context: ProjectContext
-): Promise<GeneratedTest[]> {
-    const store = GetStore();
-    const modelNames = GlobalENV.OPEN_ROUTER_MODEL.split(',');
-    const generatedTests: GeneratedTest[] = [];
-    
-    // Add context to vector store
-    await store.addDocument(`${GlobalENV.JIRA_PROJECT_KEY}-test-gen`, prompt);
-    
-    for (const modelName of modelNames) {
-        logger.info(`Generating tests with model: ${modelName}`);
+        // Look for common Confluence page separators or patterns
+        const pagePatterns = [
+            /Page:\s*([^\n]+)\n([\s\S]*?)(?=Page:\s*[^\n]+\n|$)/gi,
+            /Title:\s*([^\n]+)\n([\s\S]*?)(?=Title:\s*[^\n]+\n|$)/gi,
+            /^([A-Z][^:\n]{10,100})\n={3,}\n([\s\S]*?)(?=^[A-Z][^:\n]{10,100}\n={3,}|$)/gmi,
+            /^## ([^\n]+)\n([\s\S]*?)(?=^## [^\n]+\n|$)/gmi
+        ];
         
-        try {
-            const response = await store.generate(
-                modelName.trim(),
-                `${GlobalENV.JIRA_PROJECT_KEY}-test-gen`,
-                prompt
-            );
-            
-            // Parse the response to extract generated test files
-            const tests = parseGeneratedTests(response, context.framework);
-            generatedTests.push(...tests);
-            
-        } catch (error) {
-            logger.error(`Error generating tests with ${modelName}: ${error}`);
-        }
-    }
-    
-    return generatedTests;
-}
-
-/**
- * Parses AI response to extract test files
- */
-function parseGeneratedTests(response: string, framework: string): GeneratedTest[] {
-    const tests: GeneratedTest[] = [];
-    
-    // Look for code blocks in the response
-    const codeBlockRegex = /```(?:typescript|javascript|ts|js)?\n([\s\S]*?)```/g;
-    const fileNameRegex = /(?:\/\/|#)\s*(?:File:|Filename:)\s*(.+)/i;
-    
-    let match;
-    while ((match = codeBlockRegex.exec(response)) !== null) {
-        const code = match[1];
+        let foundPages = false;
         
-        // Try to extract filename from comment or use default
-        const fileNameMatch = code.match(fileNameRegex);
-        let fileName = fileNameMatch ? fileNameMatch[1].trim() : `generated.test.${framework.toLowerCase()}.ts`;
-        
-        // Extract what the test covers
-        const coverage: string[] = [];
-        if (code.includes('describe(')) {
-            const describeMatches = code.match(/describe\(['"`](.+?)['"`]/g);
-            if (describeMatches) {
-                coverage.push(...describeMatches.map(m => m.replace(/describe\(['"`]|['"`]/g, '')));
+        for (const pattern of pagePatterns) {
+            const matches = Array.from(searchResults.matchAll(pattern));
+            if (matches.length > 1) { // Only use if we find multiple pages
+                matches.forEach(match => {
+                    if (match[1] && match[2]) {
+                        pages.push({
+                            title: match[1].trim(),
+                            content: match[2].trim()
+                        });
+                    }
+                });
+                foundPages = true;
+                break; // Use the first pattern that finds multiple pages
             }
         }
         
-        tests.push({
-            fileName,
-            content: code,
-            framework,
-            coverage
-        });
-    }
-    
-    return tests;
-}
-
-/**
- * Writes generated tests to files
- */
-async function writeGeneratedTests(tests: GeneratedTest[]): Promise<string[]> {
-    const testDir = path.join(process.cwd(), 'generated-tests');
-    
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(testDir)) {
-        fs.mkdirSync(testDir, { recursive: true });
-    }
-    
-    const writtenFiles: string[] = [];
-    
-    for (const test of tests) {
-        const filePath = path.join(testDir, test.fileName);
-        
-        // Add header comment
-        const fileContent = `/**
- * AI-Generated Unit Tests
- * Framework: ${test.framework}
- * Coverage: ${test.coverage.join(', ')}
- * Generated: ${new Date().toISOString()}
- * 
- * Please review and modify as needed before merging
- */
-
-${test.content}`;
-        
-        fs.writeFileSync(filePath, fileContent);
-        writtenFiles.push(filePath);
-        logger.info(`Generated test file: ${filePath}`);
-    }
-    
-    return writtenFiles;
-}
-
-/**
- * Creates a pull request with generated tests
- */
-async function createTestPullRequest(
-    jiraData: JiraTicketData,
-    generatedFiles: string[]
-): Promise<string> {
-    const branchName = `test/${jiraData.id}-generated-tests`;
-    
-    try {
-        // Create and checkout new branch
-        execSync(`git checkout -b ${branchName}`, { stdio: 'pipe' });
-        
-        // Add generated test files
-        execSync('git add generated-tests/', { stdio: 'pipe' });
-        
-        // Commit changes
-        const commitMessage = `Add AI-generated tests for ${jiraData.id}: ${jiraData.title}
-
-Generated ${generatedFiles.length} test files:
-${generatedFiles.map(f => `- ${path.basename(f)}`).join('\n')}
-
-Acceptance Criteria Covered:
-${jiraData.acceptanceCriteria.map(ac => `- ${ac}`).join('\n')}`;
-        
-        execSync(`git commit -m "${commitMessage}"`, { stdio: 'pipe' });
-        
-        // Push branch
-        execSync(`git push -u origin ${branchName}`, { stdio: 'pipe' });
-        
-        // Create PR using GitHub CLI
-        const prBody = `## AI-Generated Unit Tests for ${jiraData.id}
-
-### Summary
-This PR contains AI-generated unit tests for JIRA ticket **${jiraData.id}: ${jiraData.title}**
-
-### Generated Files
-${generatedFiles.map(f => `- \`${path.basename(f)}\``).join('\n')}
-
-### Coverage
-- Business logic validation
-- Error scenarios
-- Edge cases
-- Acceptance criteria validation
-
-### Review Checklist
-- [ ] Tests compile without errors
-- [ ] Tests run successfully
-- [ ] Test assertions are meaningful
-- [ ] Coverage meets requirements
-- [ ] No duplicate tests
-- [ ] Follows project testing patterns
-
-### JIRA Ticket
-[${jiraData.id}](${GlobalENV.JIRA_URL}/browse/${jiraData.id})
-
----
-*Generated with AI Test Generation Pipeline*`;
-
-        const prCommand = `gh pr create --title "test: Add unit tests for ${jiraData.id}" --body "${prBody}" --base main`;
-        const prOutput = execSync(prCommand, { stdio: 'pipe', encoding: 'utf-8' });
-        
-        return prOutput.trim();
-        
-    } catch (error) {
-        logger.error(`Error creating pull request: ${error}`);
-        throw error;
-    }
-}
-
-/**
- * Main execution function
- */
-async function main(): Promise<void> {
-    let response = '';
-    
-    try {
-        logger.info('Starting AI-powered unit test generation...');
-        
-        // Step 1: Detect project framework
-        logger.info('Detecting project framework...');
-        const projectContext = await detectProjectFramework();
-        logger.info(`Detected framework: ${projectContext.framework}`);
-        
-        // Step 2: Fetch JIRA ticket details
-        logger.info('Fetching JIRA ticket details...');
-        const jiraData = await fetchJiraTicketDetails();
-        logger.info(`Processing ticket: ${jiraData.id} - ${jiraData.title}`);
-        
-        // Step 3: Fetch Confluence documentation
-        logger.info('Fetching project documentation from Confluence...');
-        const documentation = await fetchConfluenceDocumentation(jiraData.id);
-        
-        // Step 4: Generate test prompt
-        logger.info('Building AI prompt for test generation...');
-        const testPrompt = generateTestPrompt(projectContext, jiraData, documentation);
-        
-        // Save prompt for debugging
-        fs.writeFileSync('test-generation-prompt.txt', testPrompt);
-        
-        // Step 5: Generate unit tests using AI
-        logger.info('Generating unit tests with AI...');
-        const generatedTests = await generateUnitTests(testPrompt, projectContext);
-        
-        if (generatedTests.length === 0) {
-            throw new CustomError(
-                'NO_TESTS_GENERATED',
-                'No tests were generated. Please check the JIRA ticket and documentation.'
-            );
-        }
-        
-        logger.info(`Generated ${generatedTests.length} test files`);
-        
-        // Step 6: Write generated tests to files
-        logger.info('Writing generated tests to files...');
-        const writtenFiles = await writeGeneratedTests(generatedTests);
-        
-        // Step 7: Run tests to validate
-        logger.info('Validating generated tests...');
-        try {
-            const testCommand = projectContext.framework === 'Angular' 
-                ? 'npm run test -- generated-tests/ --watch=false'
-                : 'npm test -- generated-tests/';
+        // If no clear page separation found, look for date-based entries (common in meeting notes)
+        if (!foundPages) {
+            const datePattern = /(\d{4}-\d{2}-\d{2}[^:\n]*(?:Meeting|Notes|Report)[^\n]*)\n([\s\S]*?)(?=\d{4}-\d{2}-\d{2}[^:\n]*(?:Meeting|Notes|Report)|$)/gi;
+            const dateMatches = Array.from(searchResults.matchAll(datePattern));
             
-            execSync(testCommand, { stdio: 'inherit' });
-            logger.info('Generated tests passed validation');
-        } catch (error) {
-            logger.warn('Some generated tests may need manual adjustment');
+            if (dateMatches.length > 1) {
+                dateMatches.forEach(match => {
+                    if (match[1] && match[2]) {
+                        pages.push({
+                            title: match[1].trim(),
+                            content: match[2].trim()
+                        });
+                    }
+                });
+                foundPages = true;
+            }
         }
-        
-        // Step 8: Create pull request
-        logger.info('Creating pull request with generated tests...');
-        const prUrl = await createTestPullRequest(jiraData, writtenFiles);
-        
-        // Step 9: Update JIRA/GitHub with results
-        const summaryMessage = `
-## ✅ AI Test Generation Complete
-
-**JIRA Ticket:** ${jiraData.id}
-**Framework:** ${projectContext.framework}
-**Tests Generated:** ${generatedTests.length} files
-**Pull Request:** ${prUrl}
-
-### Coverage Summary:
-${generatedTests.map(t => `- ${t.fileName}: ${t.coverage.join(', ')}`).join('\n')}
-
-### Next Steps:
-1. Review the generated tests in the PR
-2. Run tests locally to verify
-3. Make any necessary adjustments
-4. Merge when ready
-`;
-        
-        await CreateUpdateComments(summaryMessage);
-        
-        logger.info('Test generation completed successfully!');
-        response = summaryMessage;
-        
     } catch (error) {
-        if (error instanceof CustomError) {
-            response = `❌ Test generation failed: ${error.toString()}`;
-        } else if (error instanceof Error) {
-            response = `❌ Test generation failed: ${error.message}`;
-        } else {
-            response = `❌ Test generation failed: ${String(error)}`;
-        }
-        logger.error(response);
+        logger.warn(`Error extracting Confluence pages: ${error}`);
     }
     
-    // Write final response
-    fs.writeFileSync('test-generation-result.txt', response);
-    console.log(response);
+    return pages;
 }
+
+/**
+ * Creates JIRA-specific search queries for finding related Confluence documents
+ */
+function createJiraRelatedSearchQueries(jiraData: JiraTicketData): string[] {
+    const queries: string[] = [];
+    
+    // Search by ticket ID and related tickets
+    if (jiraData.id) {
+        queries.push(`type:page AND (${jiraData.id} OR "${jiraData.id.split('-')[0]}")`);
+    }
+    
+    // Search by feature/component names extracted from title
+    const featureTerms = extractFeatureTerms(jiraData.title);
+    if (featureTerms.length > 0) {
+        queries.push(`type:page AND (${featureTerms.join(' OR ')})`);
+    }
+    
+    // Search by technical terms from description
+    const technicalTerms = extractTechnicalTerms(jiraData);
+    if (technicalTerms.length > 0) {
+        const uniqueTerms = Array.from(new Set(technicalTerms)).slice(0, 5); // Limit to top 5 terms
+        queries.push(`type:page AND (${uniqueTerms.join(' OR ')})`);
+    }
+    
+    // Search by issue type specific terms
+    const issueTypeQueries = getIssueTypeSpecificQueries(jiraData.issueType);
+    queries.push(...issueTypeQueries);
+    
+    return queries;
+}
+
+/**
+ * Extracts feature names and components from JIRA title
+ */
+function extractFeatureTerms(title: string): string[] {
+    if (!title || typeof title !== 'string') {
+        return [];
+    }
+    
+    const terms: string[] = [];
+    
+    try {
+        // Look for common feature patterns
+        const patterns = [
+            /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:feature|component|module|service|API|endpoint)\b/gi,
+            /\b(?:implement|create|add|build)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/gi,
+            /\b([A-Z][a-z]+)\s+(?:management|system|portal|dashboard|interface)\b/gi
+        ];
+        
+        patterns.forEach(pattern => {
+            const matches = title.match(pattern);
+            if (matches) {
+                matches.forEach(match => {
+                    try {
+                        const cleaned = match.replace(/\b(?:implement|create|add|build|feature|component|module|service|API|endpoint)\b/gi, '').trim();
+                        if (cleaned.length > 2) {
+                            terms.push(`"${cleaned}"`);
+                        }
+                    } catch (replaceError) {
+                        logger.warn(`Error processing match "${match}": ${replaceError}`);
+                    }
+                });
+            }
+        });
+    } catch (error) {
+        logger.warn(`Error extracting feature terms from title "${title}": ${error}`);
+    }
+    
+    return Array.from(new Set(terms));
+}
+
+/**
+ * Gets search queries specific to JIRA issue types
+ */
+function getIssueTypeSpecificQueries(issueType: string): string[] {
+    const queries: string[] = [];
+    
+    switch (issueType.toLowerCase()) {
+        case 'story':
+        case 'user story':
+            queries.push('type:page AND (requirements OR specifications OR "user story" OR workflow)');
+            break;
+        case 'bug':
+        case 'defect':
+            queries.push('type:page AND (troubleshooting OR "known issues" OR debugging OR errors)');
+            break;
+        case 'task':
+            queries.push('type:page AND (implementation OR "how to" OR procedures OR guidelines)');
+            break;
+        case 'epic':
+            queries.push('type:page AND (roadmap OR strategy OR "high level" OR overview)');
+            break;
+        case 'improvement':
+        case 'enhancement':
+            queries.push('type:page AND (optimization OR performance OR enhancement OR improvements)');
+            break;
+        default:
+            queries.push('type:page AND (documentation OR specifications)');
+    }
+    
+    return queries;
+}
+
+/**
+ * Extracts documents from formatted markdown for vector storage
+ */
+function extractDocumentsForVectorStorage(formattedDocs: string): Array<{title: string, content: string}> {
+    const documents: Array<{title: string, content: string}> = [];
+    
+    if (!formattedDocs || typeof formattedDocs !== 'string') {
+        logger.warn('No formatted docs provided for vector storage extraction');
+        return documents;
+    }
+    
+    try {
+        // Split by markdown headers
+        const sections = formattedDocs.split(/\n\n## /);
+        
+        sections.forEach((section, index) => {
+            try {
+                if (section.trim().length > 0) {
+                    const lines = section.trim().split('\n');
+                    let title = lines[0];
+                    
+                    // Clean up title
+                    if (index === 0 && title.startsWith('## ')) {
+                        title = title.substring(3);
+                    }
+                    
+                    const content = lines.slice(1).join('\n').trim();
+                    
+                    if (title && content && content.length > 50) { // Only store substantial content
+                        documents.push({
+                            title: title.trim(),
+                            content: content
+                        });
+                    }
+                }
+            } catch (sectionError) {
+                logger.warn(`Error processing document section ${index}: ${sectionError}`);
+            }
+        });
+    } catch (error) {
+        logger.error(`Error extracting documents for vector storage: ${error}`);
+    }
+    
+    return documents;
+}
+
+
+
+
+
+
+
 
 // Execute if run directly
 if (require.main === module) {
@@ -660,12 +1002,3 @@ if (require.main === module) {
         process.exit(1);
     });
 }
-
-export {
-    detectProjectFramework,
-    fetchJiraTicketDetails,
-    fetchConfluenceDocumentation,
-    generateUnitTests,
-    createTestPullRequest,
-    main
-};
