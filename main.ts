@@ -191,6 +191,12 @@ async function processModelResponses(
  * @returns Response message (success or error)
  */
 async function main(): Promise<string> {
+    // Log API key verification (last 10 characters for security)
+    const apiKey = GlobalENV.OPEN_ROUTER_API_KEY || '';
+    const maskedKey = apiKey.length > 10 ? '...' + apiKey.slice(-10) : 'NOT_SET';
+    console.log(`🔑 OpenRouter API Key (last 10 chars): ${maskedKey}`);
+    logger.info(`OpenRouter API Key verification: ${maskedKey}`);
+
     let response: string = '';
     let summaryResponse: string = getSummaryResponseString();
     try {
@@ -280,11 +286,7 @@ async function main(): Promise<string> {
         logger.info(`API URL: ${GlobalENV.OPEN_ROUTER_API_URL}`);
         logger.info(`Models: ${GlobalENV.OPEN_ROUTER_MODEL}`);
 
-        // Log API key verification (last 10 characters for security)
-        const apiKey = GlobalENV.OPEN_ROUTER_API_KEY || '';
-        const maskedKey = apiKey.length > 10 ? '...' + apiKey.slice(-10) : 'NOT_SET';
-        console.log(`🔑 OpenRouter API Key (last 10 chars): ${maskedKey}`);
-        logger.info(`OpenRouter API Key verification: ${maskedKey}`);
+        
 
         // Add 60-second delay before making OpenRouter API calls to avoid rate limits
         console.log('⏳ Waiting 60 seconds before making OpenRouter API calls...');
