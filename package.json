@@ -1,7 +1,7 @@
 {
   "name": "check-quality-of-unit-testcases",
   "description": "This action checks the quality of unit test cases in a repository via ai.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "main": "index.ts",
   "scripts": {
     "build": "tsc && ncc build",
