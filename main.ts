@@ -286,6 +286,12 @@ async function main(): Promise<string> {
         console.log(`🔑 OpenRouter API Key (last 10 chars): ${maskedKey}`);
         logger.info(`OpenRouter API Key verification: ${maskedKey}`);
 
+        // Add 60-second delay before making OpenRouter API calls to avoid rate limits
+        console.log('⏳ Waiting 60 seconds before making OpenRouter API calls...');
+        logger.info('Adding 60-second delay to avoid rate limits');
+        await new Promise(resolve => setTimeout(resolve, 60000));
+        console.log('✅ Delay completed, proceeding with API calls');
+
         const modelNames = GlobalENV.OPEN_ROUTER_MODEL.split(',');
 
         const modelResults = await processModelResponses(modelNames, store, userPrompt, summaryResponse);
